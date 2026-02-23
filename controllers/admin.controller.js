@@ -7,7 +7,7 @@ const { cacheDelPrefix } = require('../config/cache');
 
 // Upload directories
 const PUBLIC_DIR = process.env.UPLOAD_BASE_DIR || path.join(__dirname, '../../public');
-const COVER_DIR = process.env.COVER_UPLOAD_DIR || path.join(PUBLIC_DIR, 'cover');
+const COVER_DIR = process.env.COVER_SAVE_DIR || process.env.COVER_UPLOAD_DIR || path.join(PUBLIC_DIR, 'cover');
 
 const coverStorage = multer.diskStorage({
     destination: (_req, _file, cb) => {

@@ -167,7 +167,7 @@ async function main() {
 
     // Get all manga with source URLs
     const [rows] = await db.query(
-        "SELECT slug, from_manga18fx FROM manga WHERE id>1103 and from_manga18fx IS NOT NULL AND from_manga18fx != '' ORDER BY id ASC"
+        "SELECT slug, from_manga18fx FROM manga WHERE from_manga18fx IS NOT NULL AND from_manga18fx != '' ORDER BY id ASC"
     );
     const total = rows.length;
     console.log(`Found ${total} manga with source URLs.\n`);
