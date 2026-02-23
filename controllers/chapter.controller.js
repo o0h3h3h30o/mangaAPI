@@ -30,9 +30,8 @@ exports.getChapterDetail = async (req, res) => {
 
         const ch = chapterRows[0];
 
-        // Increment views (buffered, flush every 30s)
-        incrementChapterView(ch.id);
-        incrementMangaView(manga.id);
+        // Views are tracked via POST /track-view endpoint (not here)
+        // to avoid double-counting from SSR metadata + client render
 
         const chapter = {
             id: ch.id,
@@ -126,5 +125,36 @@ exports.getChapterImages = async (req, res) => {
     } catch (error) {
         console.error('Error fetching chapter images:', error);
         res.status(500).json({ success: false, error: 'Error fetching chapter images' });
+    }
+};
+
+// Track chapter view (called once from client-side only)
+exports.trackView = async (req, res) => {
+    try {
+        const { mangaSlug, chapterSlug } = req.params;
+
+        const [mangaRows] = await db.query(
+            'SELECT id FROM manga WHERE slug = ? AND is_public = 1',
+            [mangaSlug]
+        );
+        if (mangaRows.length === 0) {
+            return res.status(404).json({ success: false, error: 'Manga not found' });
+        }
+
+        const [chapterRows] = await db.query(
+            'SELECT id FROM chapter WHERE manga_id = ? AND slug = ? AND is_show = 1',
+            [mangaRows[0].id, chapterSlug]
+        );
+        if (chapterRows.length === 0) {
+            return res.status(404).json({ success: false, error: 'Chapter not found' });
+        }
+
+        incrementChapterView(chapterRows[0].id);
+        incrementMangaView(mangaRows[0].id);
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error tracking view:', error);
+        res.status(500).json({ success: false, error: 'Error tracking view' });
     }
 };
