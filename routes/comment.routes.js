@@ -19,8 +19,10 @@ const optionalAuth = (req, res, next) => {
     next();
 };
 
+const { cache } = require('../middleware/cache');
+
 // Recent comments (homepage sidebar)
-router.get('/recent', commentController.getRecentComments);
+router.get('/recent', cache.short, commentController.getRecentComments);
 
 // Manga comments
 router.get('/manga/:slug', optionalAuth, commentController.getCommentsByManga);
