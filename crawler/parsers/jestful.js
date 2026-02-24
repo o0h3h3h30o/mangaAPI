@@ -112,8 +112,9 @@ function extractMangaInfo(html) {
     // Title from h3 (usually romaji/english)
     const h3Title = $('ul.manga-info h3').first().text().trim();
 
-    // Cover image
-    const coverUrl = $('.info-cover img.thumbnail').attr('src') || '';
+    // Cover image (may be relative, build full URL)
+    const rawCoverUrl = $('.info-cover img.thumbnail').attr('src') || '';
+    const coverUrl = buildFullUrl(rawCoverUrl);
 
     // Raw other names from page
     let rawOtherNames = '';
