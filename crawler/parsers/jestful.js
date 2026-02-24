@@ -74,6 +74,19 @@ function isJapanese(text) {
 }
 
 /**
+ * Extract the Japanese portion from a mixed string
+ * "Shanbaraddo シャンバラッド" → "シャンバラッド"
+ * "公式不倫" → "公式不倫"
+ */
+function extractJapanesePart(text) {
+    // Match consecutive Japanese characters (+ spaces between them)
+    const matches = text.match(/[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\u4e00-\u9faf\u3400-\u4dbf\s]+/g);
+    if (!matches) return text;
+    // Return the longest Japanese segment, trimmed
+    return matches.reduce((a, b) => a.length >= b.length ? a : b).trim();
+}
+
+/**
  * Parse manga detail page → extract manga info
  * name = Japanese name (from otherNames), otherNames = all names combined
  */
@@ -101,8 +114,8 @@ function extractMangaInfo(html) {
         : [];
     const jpName = altNames.find(n => isJapanese(n));
 
-    // name = Japanese name (preferred), fallback to h3 title
-    const mangaName = jpName || h3Title;
+    // name = Japanese portion extracted from JP entry, fallback to h3 title
+    const mangaName = jpName ? extractJapanesePart(jpName) : h3Title;
 
     // otherNames = all unique names combined (JP names, EN names, h3 title)
     const allNames = [...altNames];
