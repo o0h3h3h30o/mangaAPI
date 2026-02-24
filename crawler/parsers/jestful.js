@@ -64,7 +64,6 @@ function parseHomepage(html) {
             if (number !== null) {
                 chapters.push({
                     number,
-                    title: $ch.attr('title') || chText,
                     url: buildFullUrl(chapterRelUrl),
                 });
             }
@@ -253,7 +252,6 @@ function parseChapterListResponse(html) {
         if (number !== null) {
             chapters.push({
                 number,
-                title: chName,
                 url: buildFullUrl(href),
                 created_at: timeText || null,
             });
