@@ -40,10 +40,12 @@ async function processAndSaveCover(imageBuffer, slug) {
 
     await Promise.all([
         sharp(imageBuffer)
+            .flatten({ background: '#ffffff' })
             .resize(SIZES.full.width)
             .jpeg({ quality: SIZES.full.quality })
             .toFile(fullPath),
         sharp(imageBuffer)
+            .flatten({ background: '#ffffff' })
             .resize(SIZES.thumb.width)
             .jpeg({ quality: SIZES.thumb.quality })
             .toFile(thumbPath),
