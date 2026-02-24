@@ -462,7 +462,8 @@ async function publishChapter(chapterId, mangaId) {
 
 /**
  * Crawl chapter pages for all unpublished chapters (is_show = 0, has source_url)
- * Flow: get page images → insert as external → publish chapter
+ * Uses is_crawling = 1 as lock to prevent duplicate processing by concurrent crons
+ * Flow: lock → get page images → insert as external → publish → unlock
  */
 async function crawlChapterPages(options = {}) {
     const limit = options.limit || 50;
@@ -471,7 +472,7 @@ async function crawlChapterPages(options = {}) {
     let query = `SELECT c.id, c.manga_id, c.name, c.number, c.source_url, m.name as manga_name
                  FROM chapter c
                  JOIN manga m ON c.manga_id = m.id
-                 WHERE c.is_show = 0 AND c.source_url != ''`;
+                 WHERE c.is_show = 0 AND c.is_crawling = 0 AND c.source_url != ''`;
     const params = [];
 
     if (mangaId) {
@@ -485,15 +486,29 @@ async function crawlChapterPages(options = {}) {
     const [chapters] = await db.query(query, params);
     console.log(`Found ${chapters.length} unpublished chapters to crawl\n`);
 
-    const results = { success: 0, failed: 0 };
+    const results = { success: 0, failed: 0, skipped: 0 };
 
     for (const ch of chapters) {
         try {
+            // Double-check: re-select to see if another process grabbed it
+            const [[fresh]] = await db.query(
+                'SELECT is_crawling, is_show FROM chapter WHERE id = ?', [ch.id]
+            );
+            if (!fresh || fresh.is_crawling === 1 || fresh.is_show === 1) {
+                console.log(`  [=] Ch.${ch.number} (id=${ch.id}): already being crawled or published, skipping`);
+                results.skipped++;
+                continue;
+            }
+
+            // Lock: set is_crawling = 1
+            await db.query('UPDATE chapter SET is_crawling = 1 WHERE id = ?', [ch.id]);
+
             // Detect parser from source_url
             const siteParser = getParser(ch.source_url);
 
             if (!siteParser.getPageImages) {
                 console.log(`  [!] ${ch.manga_name} Ch.${ch.number}: parser "${siteParser.name}" has no getPageImages, skipping`);
+                await db.query('UPDATE chapter SET is_crawling = 0 WHERE id = ?', [ch.id]);
                 results.failed++;
                 continue;
             }
@@ -504,6 +519,7 @@ async function crawlChapterPages(options = {}) {
             const images = await siteParser.getPageImages(ch.source_url);
             if (images.length === 0) {
                 console.log(`  [!] No images found, skipping`);
+                await db.query('UPDATE chapter SET is_crawling = 0 WHERE id = ?', [ch.id]);
                 results.failed++;
                 continue;
             }
@@ -512,19 +528,23 @@ async function crawlChapterPages(options = {}) {
             const inserted = await insertExternalPages(ch.id, images);
             console.log(`  [+] Inserted ${inserted} pages`);
 
-            // Publish chapter (is_show = 1 + sync manga)
+            // Publish chapter (is_show = 1 + sync manga) and unlock
             await publishChapter(ch.id, ch.manga_id);
+            await db.query('UPDATE chapter SET is_crawling = 0 WHERE id = ?', [ch.id]);
             console.log(`  [+] Published`);
 
             results.success++;
         } catch (err) {
             console.error(`  [!] Error Ch.${ch.number} (id=${ch.id}): ${err.message}`);
+            // Unlock on error so it can be retried
+            await db.query('UPDATE chapter SET is_crawling = 0 WHERE id = ?', [ch.id]).catch(() => {});
             results.failed++;
         }
     }
 
     console.log(`\n=== Chapter Pages Summary ===`);
     console.log(`Success: ${results.success}`);
+    console.log(`Skipped: ${results.skipped}`);
     console.log(`Failed:  ${results.failed}`);
 
     return results;
