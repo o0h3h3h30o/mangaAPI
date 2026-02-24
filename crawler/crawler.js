@@ -16,7 +16,7 @@ const { cacheDelPrefix } = require('../config/cache');
  */
 async function findMangaBySource(sourceUrl) {
     const [rows] = await db.query(
-        'SELECT id, name, slug, from_manga18fx FROM manga WHERE from_manga18fx LIKE ? LIMIT 1',
+        'SELECT id, name, slug, from_manga18fx, chapter_1 FROM manga WHERE from_manga18fx LIKE ? LIMIT 1',
         [`%${sourceUrl}%`]
     );
     return rows.length > 0 ? rows[0] : null;
@@ -28,14 +28,14 @@ async function findMangaBySource(sourceUrl) {
 async function findMangaByName(name) {
     // Try exact match first
     const [exact] = await db.query(
-        'SELECT id, name, slug, from_manga18fx FROM manga WHERE name = ? LIMIT 1',
+        'SELECT id, name, slug, from_manga18fx, chapter_1 FROM manga WHERE name = ? LIMIT 1',
         [name]
     );
     if (exact.length > 0) return exact[0];
 
     // Try fulltext match
     const [ft] = await db.query(
-        'SELECT id, name, slug, from_manga18fx, MATCH(name, otherNames) AGAINST(? IN BOOLEAN MODE) AS score FROM manga WHERE MATCH(name, otherNames) AGAINST(? IN BOOLEAN MODE) ORDER BY score DESC LIMIT 1',
+        'SELECT id, name, slug, from_manga18fx, chapter_1, MATCH(name, otherNames) AGAINST(? IN BOOLEAN MODE) AS score FROM manga WHERE MATCH(name, otherNames) AGAINST(? IN BOOLEAN MODE) ORDER BY score DESC LIMIT 1',
         [name, name]
     );
     return ft.length > 0 && ft[0].score > 0 ? ft[0] : null;
@@ -46,10 +46,21 @@ async function findMangaByName(name) {
  */
 async function getMaxChapterNumber(mangaId) {
     const [rows] = await db.query(
-        'SELECT MAX(number) as maxNum FROM chapter WHERE manga_id = ?',
+        'SELECT MAX(CAST(number AS DECIMAL(10,2))) as maxNum FROM chapter WHERE manga_id = ?',
         [mangaId]
     );
     return rows[0]?.maxNum || 0;
+}
+
+/**
+ * Get all existing chapter numbers for a manga (as Set of floats)
+ */
+async function getExistingChapterNumbers(mangaId) {
+    const [rows] = await db.query(
+        'SELECT CAST(number AS DECIMAL(10,2)) as num FROM chapter WHERE manga_id = ?',
+        [mangaId]
+    );
+    return new Set(rows.map(r => parseFloat(r.num)));
 }
 
 // --------------- DB Writes ---------------
@@ -209,9 +220,20 @@ async function appendSourceUrl(mangaId, currentValue, newSourceUrl) {
 async function insertChapters(mangaId, chapters) {
     if (chapters.length === 0) return 0;
 
-    const values = chapters.map(ch => [
+    // Safety: filter out chapters whose number already exists in DB
+    const existingNums = await getExistingChapterNumbers(mangaId);
+    const filtered = chapters.filter(ch => !existingNums.has(ch.number));
+    if (filtered.length === 0) {
+        console.log(`  [=] All ${chapters.length} chapters already exist, nothing to insert`);
+        return 0;
+    }
+    if (filtered.length < chapters.length) {
+        console.log(`  [~] Filtered out ${chapters.length - filtered.length} duplicate chapters`);
+    }
+
+    const values = filtered.map(ch => [
         mangaId,
-        ch.title || `Chapter ${ch.number}`,
+        ch.title || `第${ch.number}話`,
         base.generateChapterSlug(ch.number),
         ch.number,
         0,  // is_show = 0
@@ -282,10 +304,8 @@ async function processManga(item) {
 
     if (manga) {
         // === EXISTING MANGA ===
-        console.log(`  [=] Found in DB: id=${manga.id}, slug=${manga.slug}`);
-
-        const dbMax = await getMaxChapterNumber(manga.id);
-        console.log(`  [=] DB max chapter: ${dbMax}, Source latest: ${item.latestChapterNum}`);
+        const dbMax = parseFloat(manga.chapter_1) || 0;
+        console.log(`  [=] Found in DB: id=${manga.id}, slug=${manga.slug}, chapter_1=${dbMax}`);
 
         if (item.latestChapterNum <= dbMax) {
             console.log(`  [=] Up to date, skipping`);
@@ -295,8 +315,16 @@ async function processManga(item) {
         // Fetch full chapter list via parser
         console.log(`  [>] Fetching full chapter list...`);
         const allChapters = await siteParser.getFullChapterList(sourceUrl);
-        const newChapters = allChapters.filter(ch => ch.number > dbMax);
-        console.log(`  [>] Found ${allChapters.length} total, ${newChapters.length} new`);
+
+        // Keep only chapters newer than chapter_1 (the latest published)
+        const sorted = allChapters.sort((a, b) => b.number - a.number);
+        const newChapters = [];
+        for (const ch of sorted) {
+            if (ch.number <= dbMax) break;
+            newChapters.push(ch);
+        }
+
+        console.log(`  [>] Found ${allChapters.length} total, ${newChapters.length} new (DB max: ${dbMax})`);
 
         const inserted = await insertChapters(manga.id, newChapters);
         return { status: 'updated', name: item.name, inserted };
@@ -308,15 +336,23 @@ async function processManga(item) {
 
         if (manga) {
             // Name match → append source URL
-            console.log(`  [~] Name match found: id=${manga.id}, "${manga.name}"`);
+            const linkedMax = parseFloat(manga.chapter_1) || 0;
+            console.log(`  [~] Name match found: id=${manga.id}, "${manga.name}", chapter_1=${linkedMax}`);
             await appendSourceUrl(manga.id, manga.from_manga18fx, sourceUrl);
 
             // Fetch full chapter list via parser
             console.log(`  [>] Fetching full chapter list...`);
             const allChapters = await siteParser.getFullChapterList(sourceUrl);
-            const dbMax = await getMaxChapterNumber(manga.id);
-            const newChapters = allChapters.filter(ch => ch.number > dbMax);
-            console.log(`  [>] Found ${allChapters.length} total, ${newChapters.length} new`);
+
+            // Keep only chapters newer than chapter_1
+            const sorted = allChapters.sort((a, b) => b.number - a.number);
+            const newChapters = [];
+            for (const ch of sorted) {
+                if (ch.number <= linkedMax) break;
+                newChapters.push(ch);
+            }
+
+            console.log(`  [>] Found ${allChapters.length} total, ${newChapters.length} new (DB max: ${linkedMax})`);
 
             const inserted = await insertChapters(manga.id, newChapters);
             return { status: 'linked', name: item.name, mangaId: manga.id, inserted };

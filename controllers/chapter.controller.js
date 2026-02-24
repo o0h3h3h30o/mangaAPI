@@ -36,7 +36,7 @@ exports.getChapterDetail = async (req, res) => {
         const chapter = {
             id: ch.id,
             uuid: String(ch.id),
-            name: ch.name || `Chapter ${ch.number}`,
+            name: ch.name || `第${ch.number}話`,
             slug: ch.slug,
             views: ch.view || 0,
             order: parseInt(ch.number) || 0,
@@ -109,7 +109,7 @@ exports.getChapterImages = async (req, res) => {
             chapter: {
                 id: ch.id,
                 uuid: String(ch.id),
-                name: ch.name || `Chapter ${ch.number}`,
+                name: ch.name || `第${ch.number}話`,
                 slug: ch.slug,
                 views: ch.view || 0,
                 order: parseInt(ch.number) || 0,

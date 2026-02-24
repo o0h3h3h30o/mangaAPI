@@ -492,7 +492,7 @@ exports.getMangaBySlug = async (req, res) => {
             firstChapter = {
                 id: ch.id,
                 uuid: String(ch.id),
-                name: ch.name || `Chapter ${ch.number}`,
+                name: ch.name || `第${ch.number}話`,
                 slug: ch.slug || `chapter-${ch.number}`,
                 views: ch.view || 0,
                 order: parseInt(ch.number) || 1,
@@ -723,7 +723,7 @@ exports.getChaptersByManga = async (req, res) => {
             chapters = rows.map(ch => ({
                 id: ch.id,
                 uuid: String(ch.id),
-                name: ch.name || `Chapter ${ch.number}`,
+                name: ch.name || `第${ch.number}話`,
                 slug: ch.slug || `chapter-${ch.number}`,
                 views: ch.view || 0,
                 order: parseInt(ch.number) || 0,
