@@ -116,16 +116,14 @@ async function insertManga(data) {
     const statusId = mapStatusId(data.status);
 
     const [result] = await db.query(
-        `INSERT INTO manga (name, slug, new_slug, summary, otherNames, from_manga18fx, cover, status_id, is_public, created_at, update_at, create_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NOW(), UNIX_TIMESTAMP(), UNIX_TIMESTAMP())`,
+        `INSERT INTO manga (name, slug, summary, otherNames, from_manga18fx, status_id, is_public, created_at, create_at)
+         VALUES (?, ?, ?, ?, ?, ?, 0, NOW(), UNIX_TIMESTAMP())`,
         [
             data.name,
-            slug,
             slug,
             data.description || '',
             data.otherNames || '',
             data.sourceUrl || '',
-            data.coverUrl || '',
             statusId,
         ]
     );
