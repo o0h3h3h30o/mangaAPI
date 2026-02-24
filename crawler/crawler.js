@@ -566,8 +566,7 @@ async function crawlChapterPages(options = {}) {
             // Get page images from source
             const images = await siteParser.getPageImages(ch.source_url);
             if (images.length === 0) {
-                console.log(`  [!] No images found, skipping`);
-                await db.query('UPDATE chapter SET is_crawling = 0 WHERE id = ?', [ch.id]);
+                console.log(`  [!] No images found, marking as failed`);
                 results.failed++;
                 continue;
             }
@@ -584,8 +583,7 @@ async function crawlChapterPages(options = {}) {
             results.success++;
         } catch (err) {
             console.error(`  [!] Error Ch.${ch.number} (id=${ch.id}): ${err.message}`);
-            // Unlock on error so it can be retried
-            await db.query('UPDATE chapter SET is_crawling = 0 WHERE id = ?', [ch.id]).catch(() => {});
+            // Keep is_crawling = 1 so it won't be retried (source page likely gone)
             results.failed++;
         }
     }
