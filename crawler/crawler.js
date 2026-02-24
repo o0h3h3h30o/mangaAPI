@@ -7,6 +7,7 @@ const db = require('../config/database');
 const { getParser, getAllParsers, getParserByName } = require('./parsers');
 const base = require('./parsers/base');
 const { downloadAndProcessCover } = require('./cover-processor');
+const { cacheDelPrefix } = require('../config/cache');
 
 // --------------- DB Lookups ---------------
 
@@ -404,10 +405,137 @@ async function crawlAll() {
     return allResults;
 }
 
+// --------------- Chapter Pages Crawl ---------------
+
+/**
+ * Insert page images as external URLs for a chapter
+ */
+async function insertExternalPages(chapterId, imageUrls) {
+    if (imageUrls.length === 0) return 0;
+
+    const values = imageUrls.map((url, i) => [
+        chapterId,
+        String(i + 1).padStart(3, '0'), // slug: 001, 002, ...
+        url,
+        1, // external = 1
+    ]);
+
+    const [result] = await db.query(
+        'INSERT IGNORE INTO page (chapter_id, slug, image, external) VALUES ?',
+        [values]
+    );
+
+    return result.affectedRows;
+}
+
+/**
+ * Publish chapter: set is_show = 1 + sync manga denormalized fields + invalidate cache
+ */
+async function publishChapter(chapterId, mangaId) {
+    await db.query('UPDATE chapter SET is_show = 1 WHERE id = ?', [chapterId]);
+
+    // Sync manga latest chapter info
+    const [rows] = await db.query(
+        `SELECT number, slug, created_at FROM chapter
+         WHERE manga_id = ? AND is_show = 1
+         ORDER BY CAST(number AS DECIMAL(10,2)) DESC, id DESC LIMIT 1`,
+        [mangaId]
+    );
+    if (rows.length > 0) {
+        const ch = rows[0];
+        await db.query(
+            `UPDATE manga SET chapter_1 = ?, chap_1_slug = ?, time_chap_1 = UNIX_TIMESTAMP(), update_at = UNIX_TIMESTAMP() WHERE id = ?`,
+            [parseFloat(ch.number) || 0, ch.slug, mangaId]
+        );
+    }
+
+    // Invalidate caches
+    const [[manga]] = await db.query('SELECT slug FROM manga WHERE id = ?', [mangaId]);
+    if (manga) {
+        cacheDelPrefix(`manga:detail:${manga.slug}`);
+        cacheDelPrefix(`chapters:${manga.slug}`);
+    }
+    cacheDelPrefix('newest:');
+    cacheDelPrefix('hotNewReleases:');
+    cacheDelPrefix('browse:');
+}
+
+/**
+ * Crawl chapter pages for all unpublished chapters (is_show = 0, has source_url)
+ * Flow: get page images → insert as external → publish chapter
+ */
+async function crawlChapterPages(options = {}) {
+    const limit = options.limit || 50;
+    const mangaId = options.mangaId || null;
+
+    let query = `SELECT c.id, c.manga_id, c.name, c.number, c.source_url, m.name as manga_name
+                 FROM chapter c
+                 JOIN manga m ON c.manga_id = m.id
+                 WHERE c.is_show = 0 AND c.source_url != ''`;
+    const params = [];
+
+    if (mangaId) {
+        query += ' AND c.manga_id = ?';
+        params.push(mangaId);
+    }
+
+    query += ' ORDER BY c.manga_id ASC, c.number ASC LIMIT ?';
+    params.push(limit);
+
+    const [chapters] = await db.query(query, params);
+    console.log(`Found ${chapters.length} unpublished chapters to crawl\n`);
+
+    const results = { success: 0, failed: 0 };
+
+    for (const ch of chapters) {
+        try {
+            // Detect parser from source_url
+            const siteParser = getParser(ch.source_url);
+
+            if (!siteParser.getPageImages) {
+                console.log(`  [!] ${ch.manga_name} Ch.${ch.number}: parser "${siteParser.name}" has no getPageImages, skipping`);
+                results.failed++;
+                continue;
+            }
+
+            console.log(`[*] ${ch.manga_name} — Ch.${ch.number} (id=${ch.id})`);
+
+            // Get page images from source
+            const images = await siteParser.getPageImages(ch.source_url);
+            if (images.length === 0) {
+                console.log(`  [!] No images found, skipping`);
+                results.failed++;
+                continue;
+            }
+
+            // Insert pages as external
+            const inserted = await insertExternalPages(ch.id, images);
+            console.log(`  [+] Inserted ${inserted} pages`);
+
+            // Publish chapter (is_show = 1 + sync manga)
+            await publishChapter(ch.id, ch.manga_id);
+            console.log(`  [+] Published`);
+
+            results.success++;
+        } catch (err) {
+            console.error(`  [!] Error Ch.${ch.number} (id=${ch.id}): ${err.message}`);
+            results.failed++;
+        }
+    }
+
+    console.log(`\n=== Chapter Pages Summary ===`);
+    console.log(`Success: ${results.success}`);
+    console.log(`Failed:  ${results.failed}`);
+
+    return results;
+}
+
 module.exports = {
     crawlSite,
     crawlAll,
     processManga,
+    crawlChapterPages,
+    publishChapter,
     findMangaBySource,
     findMangaByName,
     getMaxChapterNumber,
