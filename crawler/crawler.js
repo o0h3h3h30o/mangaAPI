@@ -6,6 +6,7 @@
 const db = require('../config/database');
 const { getParser, getAllParsers, getParserByName } = require('./parsers');
 const base = require('./parsers/base');
+const { downloadAndProcessCover } = require('./cover-processor');
 
 // --------------- DB Lookups ---------------
 
@@ -335,6 +336,16 @@ async function processManga(item) {
                 genres: info.genres,
                 sourceUrl: sourceUrl,
             });
+
+            // Download & resize cover image
+            if (info.coverUrl) {
+                try {
+                    const slug = base.generateSlug(info.name || item.name);
+                    await downloadAndProcessCover(info.coverUrl, slug);
+                } catch (err) {
+                    console.error(`  [!] Cover download failed: ${err.message}`);
+                }
+            }
 
             // Fetch full chapter list via parser
             console.log(`  [>] Fetching full chapter list...`);

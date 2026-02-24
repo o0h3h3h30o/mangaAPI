@@ -4,6 +4,7 @@
  */
 const cheerio = require('cheerio');
 const { parseChapterNumber } = require('./base');
+const { withProxy } = require('../proxy');
 
 const BASE_URL = 'https://jestful.net';
 
@@ -208,12 +209,12 @@ async function fetchChapterList(mangaSlug) {
     const randomStr = generateRandomString(25);
     const url = `${BASE_URL}/app/manga/controllers/${randomStr}.lstc?slug=${mangaSlug}`;
 
-    const res = await fetch(url, {
+    const res = await fetch(url, withProxy({
         headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
             'Referer': 'http://jestful.net',
         },
-    });
+    }));
 
     if (!res.ok) throw new Error(`HTTP ${res.status} fetching chapter list for ${mangaSlug}`);
     return res.text();
@@ -265,12 +266,12 @@ async function getPageImages(chapterUrl) {
     const randomStr = generateRandomString(30);
     const apiUrl = `${BASE_URL}/app/manga/controllers/${randomStr}iog?cid=${chapterId}`;
 
-    const res = await fetch(apiUrl, {
+    const res = await fetch(apiUrl, withProxy({
         headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
             'Referer': 'https://jestful.net',
         },
-    });
+    }));
     if (!res.ok) throw new Error(`HTTP ${res.status} fetching page images for cid=${chapterId}`);
     const imgHtml = await res.text();
 

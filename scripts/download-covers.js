@@ -1,15 +1,18 @@
 #!/usr/bin/env node
 
 /**
- * Download manga cover images by crawling source pages (jestful.net).
+ * Download & resize manga cover images by crawling source pages.
  *
- * Usage: node scripts/download-covers.js
+ * Usage: node scripts/download-covers.js [--force]
  *
  * Flow:
  *   1. Read `from_manga18fx` field (comma-separated source URLs) from each manga
  *   2. Fetch the first URL for each manga
  *   3. Parse HTML to find cover image: div.info-cover img[src]
- *   4. Download that image and save as {slug}.jpg
+ *   4. Download image → sharp resize → save {slug}.jpg (600px) + {slug}-thumb.jpg (300px)
+ *
+ * Flags:
+ *   --force  Re-download even if cover already exists
  *
  * Env vars (from ../.env):
  *   COVER_SAVE_DIR - local directory to save covers
@@ -17,99 +20,25 @@
 
 require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
 
-const fs = require('fs');
-const path = require('path');
-const https = require('https');
-const http = require('http');
 const db = require('../config/database');
+const { fetchPage } = require('../crawler/parsers/base');
+const { downloadAndProcessCover, coverExists } = require('../crawler/cover-processor');
 
-const COVER_SAVE_DIR = process.env.COVER_SAVE_DIR || path.join(__dirname, '../../public/cover');
 const CONCURRENCY = 3;
 const MAX_RETRIES = 2;
-
-function fetchPage(url) {
-    return new Promise((resolve, reject) => {
-        const proto = url.startsWith('https') ? https : http;
-        const req = proto.get(url, {
-            timeout: 20000,
-            headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' }
-        }, (res) => {
-            if (res.statusCode === 301 || res.statusCode === 302) {
-                return fetchPage(res.headers.location).then(resolve).catch(reject);
-            }
-            if (res.statusCode !== 200) {
-                return reject(new Error(`HTTP ${res.statusCode}`));
-            }
-            let data = '';
-            res.on('data', chunk => data += chunk);
-            res.on('end', () => resolve(data));
-        });
-        req.on('error', reject);
-        req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
-    });
-}
+const FORCE = process.argv.includes('--force');
 
 function extractCoverUrl(html) {
-    // Match: <div class="info-cover"> ... <img ... src="...">
     const match = html.match(/info-cover[\s\S]*?<img[^>]*src=["']([^"']+)["']/i);
     return match ? match[1] : null;
 }
 
-function downloadFile(url, destPath) {
-    return new Promise((resolve, reject) => {
-        const proto = url.startsWith('https') ? https : http;
-        const file = fs.createWriteStream(destPath);
-
-        const req = proto.get(url, {
-            timeout: 30000,
-            headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' }
-        }, (res) => {
-            if (res.statusCode === 301 || res.statusCode === 302) {
-                file.close();
-                if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
-                return downloadFile(res.headers.location, destPath).then(resolve).catch(reject);
-            }
-            if (res.statusCode !== 200) {
-                file.close();
-                if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
-                return reject(new Error(`HTTP ${res.statusCode}`));
-            }
-
-            res.pipe(file);
-            file.on('finish', () => {
-                file.close();
-                const stats = fs.statSync(destPath);
-                if (stats.size < 1000) {
-                    fs.unlinkSync(destPath);
-                    reject(new Error('File too small'));
-                } else {
-                    resolve();
-                }
-            });
-        });
-
-        req.on('error', (err) => {
-            file.close();
-            if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
-            reject(err);
-        });
-        req.on('timeout', () => {
-            req.destroy();
-            file.close();
-            if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
-            reject(new Error('Timeout'));
-        });
-    });
-}
-
 async function processManga(manga, idx, total) {
-    // Truncate slug if filename would exceed OS limit (255 bytes)
-    const maxSlugLen = 245; // 245 + ".jpg" = 249, safe under 255
+    const maxSlugLen = 245;
     const slug = manga.slug.length > maxSlugLen ? manga.slug.substring(0, maxSlugLen) : manga.slug;
-    const destPath = path.join(COVER_SAVE_DIR, `${slug}.jpg`);
 
-    // Skip if already exists
-    if (fs.existsSync(destPath)) {
+    // Skip if both versions already exist (unless --force)
+    if (!FORCE && coverExists(slug)) {
         return 'skipped';
     }
 
@@ -132,9 +61,9 @@ async function processManga(manga, idx, total) {
                 return 'failed';
             }
 
-            // Step 3: Download the cover image
-            await downloadFile(coverUrl, destPath);
-            console.log(`[${idx}/${total}] OK: ${manga.slug}.jpg`);
+            // Step 3: Download → resize → save (full + thumb)
+            await downloadAndProcessCover(coverUrl, slug);
+            console.log(`[${idx}/${total}] OK: ${manga.slug}`);
             return 'success';
         } catch (err) {
             if (attempt === MAX_RETRIES) {
@@ -159,11 +88,9 @@ async function processChunk(items, startIndex, total) {
 }
 
 async function main() {
-    console.log(`Cover save dir: ${COVER_SAVE_DIR}`);
     console.log(`Concurrency: ${CONCURRENCY}`);
+    console.log(`Force: ${FORCE}`);
     console.log('---');
-
-    fs.mkdirSync(COVER_SAVE_DIR, { recursive: true });
 
     // Get all manga with source URLs
     const [rows] = await db.query(
