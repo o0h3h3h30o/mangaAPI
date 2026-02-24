@@ -33,12 +33,16 @@ async function findMangaByName(name) {
     );
     if (exact.length > 0) return exact[0];
 
-    // Try fulltext match
-    const [ft] = await db.query(
-        'SELECT id, name, slug, from_manga18fx, chapter_1, MATCH(name, otherNames) AGAINST(? IN BOOLEAN MODE) AS score FROM manga WHERE MATCH(name, otherNames) AGAINST(? IN BOOLEAN MODE) ORDER BY score DESC LIMIT 1',
-        [name, name]
-    );
-    return ft.length > 0 && ft[0].score > 0 ? ft[0] : null;
+    // Try fulltext match (may fail if FULLTEXT index is missing)
+    try {
+        const [ft] = await db.query(
+            'SELECT id, name, slug, from_manga18fx, chapter_1, MATCH(name, otherNames) AGAINST(? IN BOOLEAN MODE) AS score FROM manga WHERE MATCH(name, otherNames) AGAINST(? IN BOOLEAN MODE) ORDER BY score DESC LIMIT 1',
+            [name, name]
+        );
+        return ft.length > 0 && ft[0].score > 0 ? ft[0] : null;
+    } catch {
+        return null;
+    }
 }
 
 /**
