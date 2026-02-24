@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const { cacheDelPrefix } = require('../config/cache');
+const { processAndSaveCover } = require('../crawler/cover-processor');
 
 // Upload directories
 const PUBLIC_DIR = process.env.UPLOAD_BASE_DIR || path.join(__dirname, '../../public');
@@ -505,19 +506,15 @@ exports.uploadMangaCover = async (req, res) => {
         }
 
         const slug = rows[0].slug;
-        const finalPath = path.join(COVER_DIR, `${slug}.jpg`);
 
-        // Remove old cover if exists
-        if (fs.existsSync(finalPath)) {
-            fs.unlinkSync(finalPath);
-        }
-
-        // Rename temp file to slug.jpg
-        fs.renameSync(req.file.path, finalPath);
+        // Read uploaded file → resize with sharp → save full + thumb
+        const imageBuffer = fs.readFileSync(req.file.path);
+        fs.unlinkSync(req.file.path);
+        await processAndSaveCover(imageBuffer, slug);
 
         res.json({
             success: true,
-            data: { url: `/cover/${slug}.jpg` },
+            data: { url: `/cover/${slug}.jpg`, thumb: `/cover/${slug}-thumb.jpg` },
         });
     } catch (error) {
         // Clean up temp file on error
