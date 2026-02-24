@@ -144,7 +144,7 @@ async function insertManga(data) {
 
     const [result] = await db.query(
         `INSERT INTO manga (name, slug, summary, otherNames, from_manga18fx, status_id, is_public, created_at, create_at)
-         VALUES (?, ?, ?, ?, ?, ?, 0, NOW(), UNIX_TIMESTAMP())`,
+         VALUES (?, ?, ?, ?, ?, ?, 1, NOW(), UNIX_TIMESTAMP())`,
         [
             data.name,
             slug,
