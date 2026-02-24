@@ -28,7 +28,13 @@ function parseHomepage(html) {
 
     // TODO: Sửa selector phù hợp với trang nguồn
     // $('.manga-item').each((_, el) => {
-    //     results.push({ name, url, coverUrl, chapters: [], latestChapterNum: 0 });
+    //     const $item = $(el);
+    //     const name = $item.find('.title').text().trim();
+    //     const url = $item.find('a').attr('href');
+    //     const coverUrl = $item.find('img').attr('src');
+    //     const chapters = [];
+    //     // parse chapters...
+    //     results.push({ name, url, coverUrl, chapters, latestChapterNum: chapters[0]?.number || 0 });
     // });
 
     return results;
@@ -36,7 +42,7 @@ function parseHomepage(html) {
 
 /**
  * TODO: Parse manga detail page → extract manga info
- * Phải return: { name, coverUrl, otherNames, genres, status, authors, description }
+ * Phải return: { name, coverUrl, otherNames, genres, status, authors, artists, tags, description }
  */
 function extractMangaInfo(html) {
     const $ = cheerio.load(html);
@@ -46,9 +52,11 @@ function extractMangaInfo(html) {
         name: '',
         coverUrl: '',
         otherNames: '',
-        genres: [],
+        genres: [],        // → category + category_manga
         status: 'ongoing', // 'ongoing' | 'completed'
-        authors: [],
+        authors: [],       // → author + author_manga (type=1)
+        artists: [],       // → author + author_manga (type=2)
+        tags: [],          // → tag + manga_tag
         description: '',
     };
 }
@@ -56,11 +64,27 @@ function extractMangaInfo(html) {
 /**
  * TODO: Lấy full danh sách chapter từ source URL
  * Phải return: [{ number, title, url }]
+ *
+ * Mặc định: fetch trang detail rồi parse chapter list từ HTML
+ * (Nếu trang dùng API riêng như jestful thì override lại)
  */
 async function getFullChapterList(mangaSourceUrl) {
-    // TODO: Implement
-    // Có thể cần fetch thêm API riêng (như jestful)
-    return [];
+    const html = await fetchPage(mangaSourceUrl);
+    const $ = cheerio.load(html);
+    const chapters = [];
+
+    // TODO: Sửa selector phù hợp — ví dụ:
+    // $('.chapter-list li a').each((_, el) => {
+    //     const $a = $(el);
+    //     const title = $a.text().trim();
+    //     const number = parseChapterNumber(title);
+    //     const url = $a.attr('href');
+    //     if (number !== null) {
+    //         chapters.push({ number, title, url });
+    //     }
+    // });
+
+    return chapters;
 }
 
 module.exports = {
