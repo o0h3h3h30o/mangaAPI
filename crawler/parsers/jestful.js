@@ -57,6 +57,82 @@ function parseHomepage(html) {
 }
 
 /**
+ * Parse manga detail page → extract manga info
+ */
+function extractMangaInfo(html) {
+    const $ = cheerio.load(html);
+
+    // Name
+    const name = $('ul.manga-info h3').first().text().trim();
+
+    // Cover image
+    const coverUrl = $('.info-cover img.thumbnail').attr('src') || '';
+
+    // Other names
+    let otherNames = '';
+    $('ul.manga-info li').each((_, el) => {
+        const text = $(el).text();
+        if (text.includes('Other name')) {
+            otherNames = text.replace(/.*Other name\s*\(s\)\s*:\s*/i, '').trim();
+        }
+    });
+
+    // Genres
+    const genres = [];
+    $('ul.manga-info li').each((_, el) => {
+        const text = $(el).text();
+        if (text.includes('Genre(s)')) {
+            $(el).find('a.btn').each((_, a) => {
+                const genre = $(a).text().trim();
+                if (genre) genres.push(genre);
+            });
+        }
+    });
+
+    // Status: "Incomplete" → "ongoing", "Completed" → "completed"
+    let status = 'ongoing';
+    $('ul.manga-info li').each((_, el) => {
+        const text = $(el).text();
+        if (text.includes('Status')) {
+            const statusText = $(el).find('a.btn').text().trim().toLowerCase();
+            if (statusText.includes('complete') && !statusText.includes('incomplete')) {
+                status = 'completed';
+            }
+        }
+    });
+
+    // Authors (often commented out in HTML, try regex on raw HTML)
+    const authors = [];
+    const authorMatch = html.match(/manga-author-(.*?)\.html/g);
+    if (authorMatch) {
+        authorMatch.forEach(m => {
+            const name = m.replace('manga-author-', '').replace('.html', '');
+            if (name && !authors.includes(name)) authors.push(name);
+        });
+    }
+
+    // Description
+    let description = '';
+    $('div.row').each((_, el) => {
+        const $row = $(el);
+        const h3 = $row.find('h3').first().text().trim();
+        if (h3 === 'Description') {
+            description = $row.find('p').first().text().trim();
+        }
+    });
+
+    return {
+        name,
+        coverUrl,
+        otherNames,
+        genres,
+        status,
+        authors,
+        description,
+    };
+}
+
+/**
  * Extract manga slug from URL: "hwms-shamballad.html" → "shamballad"
  */
 function extractSlugFromUrl(url) {
@@ -178,6 +254,7 @@ function buildFullUrl(relativePath) {
 module.exports = {
     BASE_URL,
     parseHomepage,
+    extractMangaInfo,
     parseChapterListResponse,
     fetchChapterList,
     getFullChapterList,

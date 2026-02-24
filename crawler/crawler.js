@@ -63,27 +63,100 @@ async function getMaxChapterNumber(mangaId) {
 // --------------- DB Writes ---------------
 
 /**
- * Insert new manga record
+ * Map status text → status_id (1=ongoing, 2=completed)
+ */
+function mapStatusId(status) {
+    if (status === 'completed') return 2;
+    return 1; // ongoing by default
+}
+
+/**
+ * Find or create a category by name, return category_id
+ */
+async function findOrCreateCategory(name) {
+    const slug = parser.generateSlug(name);
+    const [rows] = await db.query(
+        'SELECT id FROM category WHERE slug = ? LIMIT 1',
+        [slug]
+    );
+    if (rows.length > 0) return rows[0].id;
+
+    const [result] = await db.query(
+        'INSERT INTO category (name, slug, created_at, updated_at) VALUES (?, ?, NOW(), NOW())',
+        [name, slug]
+    );
+    console.log(`    [+] Created category: "${name}" (id=${result.insertId})`);
+    return result.insertId;
+}
+
+/**
+ * Find or create an author by name, return author_id
+ */
+async function findOrCreateAuthor(name) {
+    const slug = parser.generateSlug(name);
+    const [rows] = await db.query(
+        'SELECT id FROM author WHERE slug = ? LIMIT 1',
+        [slug]
+    );
+    if (rows.length > 0) return rows[0].id;
+
+    const [result] = await db.query(
+        'INSERT INTO author (name, slug, created_at, updated_at) VALUES (?, ?, NOW(), NOW())',
+        [name, slug]
+    );
+    console.log(`    [+] Created author: "${name}" (id=${result.insertId})`);
+    return result.insertId;
+}
+
+/**
+ * Insert new manga record with categories and authors
  */
 async function insertManga(data) {
     const slug = parser.generateSlug(data.name);
+    const statusId = mapStatusId(data.status);
+
     const [result] = await db.query(
-        `INSERT INTO manga (name, title, slug, description, otherNames, author, artist, status, from_manga18fx, is_public, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NOW(), NOW())`,
+        `INSERT INTO manga (name, slug, new_slug, summary, otherNames, from_manga18fx, cover, status_id, is_public, created_at, update_at, create_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NOW(), UNIX_TIMESTAMP(), UNIX_TIMESTAMP())`,
         [
             data.name,
-            data.name,
+            slug,
             slug,
             data.description || '',
             data.otherNames || '',
-            data.authors ? data.authors.join(', ') : '',
-            data.artists ? data.artists.join(', ') : '',
-            data.status || 'ongoing',
             data.sourceUrl || '',
+            data.coverUrl || '',
+            statusId,
         ]
     );
-    console.log(`  [+] Inserted manga: "${data.name}" (id=${result.insertId})`);
-    return result.insertId;
+
+    const mangaId = result.insertId;
+    console.log(`  [+] Inserted manga: "${data.name}" (id=${mangaId})`);
+
+    // Link categories
+    if (Array.isArray(data.genres) && data.genres.length > 0) {
+        const catIds = [];
+        for (const genre of data.genres) {
+            const catId = await findOrCreateCategory(genre);
+            catIds.push(catId);
+        }
+        const catValues = catIds.map(cid => [cid, mangaId]);
+        await db.query('INSERT IGNORE INTO category_manga (category_id, manga_id) VALUES ?', [catValues]);
+        console.log(`  [+] Linked ${catIds.length} categories`);
+    }
+
+    // Link authors
+    if (Array.isArray(data.authors) && data.authors.length > 0) {
+        const entries = [];
+        for (const authorName of data.authors) {
+            const authorId = await findOrCreateAuthor(authorName);
+            entries.push([authorId, mangaId, 1]); // type=1 (author)
+        }
+        await db.query('INSERT IGNORE INTO author_manga (author_id, manga_id, type) VALUES ?', [entries]);
+        console.log(`  [+] Linked ${entries.length} authors`);
+    }
+
+    return mangaId;
 }
 
 /**
@@ -217,11 +290,20 @@ async function processManga(item) {
             return { status: 'linked', name: item.name, mangaId: manga.id, inserted };
 
         } else {
-            // Manga hoàn toàn mới
-            console.log(`  [+] New manga, creating...`);
+            // Manga hoàn toàn mới → fetch detail page để lấy info
+            console.log(`  [+] New manga, fetching detail...`);
+            const detailHtml = await fetchPage(sourceUrl);
+            const info = parser.extractMangaInfo(detailHtml);
+            console.log(`  [+] Parsed: "${info.name}", genres=[${info.genres.join(', ')}], status=${info.status}`);
 
             const mangaId = await insertManga({
-                name: item.name,
+                name: info.name || item.name,
+                description: info.description,
+                otherNames: info.otherNames,
+                authors: info.authors,
+                status: info.status,
+                coverUrl: info.coverUrl,
+                genres: info.genres,
                 sourceUrl: sourceUrl,
             });
 
