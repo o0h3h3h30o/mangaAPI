@@ -238,13 +238,15 @@ async function insertChapters(mangaId, chapters) {
         ch.number,
         0,  // is_show = 0
         ch.url || '',
+        ch.created_at || new Date().toISOString(),
+        ch.created_at || new Date().toISOString(),
     ]);
 
-    const placeholders = values.map(() => '(?, ?, ?, ?, ?, ?)').join(', ');
+    const placeholders = values.map(() => '(?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
     const flat = values.flat();
 
     const [result] = await db.query(
-        `INSERT IGNORE INTO chapter (manga_id, name, slug, number, is_show, source_url)
+        `INSERT IGNORE INTO chapter (manga_id, name, slug, number, is_show, source_url, created_at, updated_at)
          VALUES ${placeholders}`,
         flat
     );
