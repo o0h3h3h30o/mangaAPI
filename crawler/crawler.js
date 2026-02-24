@@ -80,7 +80,8 @@ async function findOrCreateCategory(name) {
 }
 
 /**
- * Find or create an author by name, return author_id
+ * Find or create an author/artist by name, return author_id
+ * (author and artist share the same `author` table)
  */
 async function findOrCreateAuthor(name) {
     const slug = base.generateSlug(name);
@@ -95,6 +96,25 @@ async function findOrCreateAuthor(name) {
         [name, slug]
     );
     console.log(`    [+] Created author: "${name}" (id=${result.insertId})`);
+    return result.insertId;
+}
+
+/**
+ * Find or create a tag by name, return tag_id
+ */
+async function findOrCreateTag(name) {
+    const slug = base.generateSlug(name);
+    const [rows] = await db.query(
+        'SELECT id FROM tag WHERE slug = ? LIMIT 1',
+        [slug]
+    );
+    if (rows.length > 0) return rows[0].id;
+
+    const [result] = await db.query(
+        'INSERT INTO tag (name, slug, created_at, updated_at) VALUES (?, ?, NOW(), NOW())',
+        [name, slug]
+    );
+    console.log(`    [+] Created tag: "${name}" (id=${result.insertId})`);
     return result.insertId;
 }
 
@@ -133,15 +153,35 @@ async function insertManga(data) {
         console.log(`  [+] Linked ${catIds.length} categories`);
     }
 
-    // Link authors
+    // Link authors (type=1) and artists (type=2)
+    const authorEntries = [];
     if (Array.isArray(data.authors) && data.authors.length > 0) {
-        const entries = [];
         for (const authorName of data.authors) {
             const authorId = await findOrCreateAuthor(authorName);
-            entries.push([authorId, mangaId, 1]); // type=1 (author)
+            authorEntries.push([authorId, mangaId, 1]); // type=1 (author)
         }
-        await db.query('INSERT IGNORE INTO author_manga (author_id, manga_id, type) VALUES ?', [entries]);
-        console.log(`  [+] Linked ${entries.length} authors`);
+    }
+    if (Array.isArray(data.artists) && data.artists.length > 0) {
+        for (const artistName of data.artists) {
+            const artistId = await findOrCreateAuthor(artistName);
+            authorEntries.push([artistId, mangaId, 2]); // type=2 (artist)
+        }
+    }
+    if (authorEntries.length > 0) {
+        await db.query('INSERT IGNORE INTO author_manga (author_id, manga_id, type) VALUES ?', [authorEntries]);
+        console.log(`  [+] Linked ${authorEntries.length} authors/artists`);
+    }
+
+    // Link tags
+    if (Array.isArray(data.tags) && data.tags.length > 0) {
+        const tagIds = [];
+        for (const tagName of data.tags) {
+            const tagId = await findOrCreateTag(tagName);
+            tagIds.push(tagId);
+        }
+        const tagValues = tagIds.map(tid => [tid, mangaId]);
+        await db.query('INSERT IGNORE INTO manga_tag (tag_id, manga_id) VALUES ?', [tagValues]);
+        console.log(`  [+] Linked ${tagIds.length} tags`);
     }
 
     return mangaId;
