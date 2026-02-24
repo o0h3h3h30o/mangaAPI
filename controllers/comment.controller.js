@@ -81,7 +81,7 @@ exports.getCommentsByManga = async (req, res) => {
         // Get top-level comments with user info
         const [topComments] = await db.query(
             `SELECT c.id, c.comment, c.post_id, c.post_type, c.user_id, c.parent_comment, c.created_at, c.updated_at,
-                u.name as user_name, u.avatar as user_avatar, u.slug as user_slug
+                u.name as user_name, u.avatar as user_avatar
             FROM comments c
             LEFT JOIN users u ON u.id = c.user_id
             WHERE ${whereClause}
@@ -96,7 +96,7 @@ exports.getCommentsByManga = async (req, res) => {
         if (topIds.length > 0) {
             const [replies] = await db.query(
                 `SELECT c.id, c.comment, c.post_id, c.post_type, c.user_id, c.parent_comment, c.created_at, c.updated_at,
-                    u.name as user_name, u.avatar as user_avatar, u.slug as user_slug
+                    u.name as user_name, u.avatar as user_avatar
                 FROM comments c
                 LEFT JOIN users u ON u.id = c.user_id
                 WHERE c.parent_comment IN (?)
@@ -213,7 +213,7 @@ exports.addComment = async (req, res) => {
         // Fetch the created comment with user info
         const [rows] = await db.query(
             `SELECT c.id, c.comment, c.post_id, c.post_type, c.user_id, c.parent_comment, c.created_at, c.updated_at,
-                u.name as user_name, u.avatar as user_avatar, u.slug as user_slug
+                u.name as user_name, u.avatar as user_avatar
             FROM comments c
             LEFT JOIN users u ON u.id = c.user_id
             WHERE c.id = ?`,
@@ -265,7 +265,7 @@ exports.updateComment = async (req, res) => {
         // Fetch updated comment
         const [rows] = await db.query(
             `SELECT c.id, c.comment, c.post_id, c.post_type, c.user_id, c.parent_comment, c.created_at, c.updated_at,
-                u.name as user_name, u.avatar as user_avatar, u.slug as user_slug
+                u.name as user_name, u.avatar as user_avatar
             FROM comments c
             LEFT JOIN users u ON u.id = c.user_id
             WHERE c.id = ?`,
@@ -344,7 +344,7 @@ exports.getCommentsByChapter = async (req, res) => {
         // Get top-level comments with user info
         const [topComments] = await db.query(
             `SELECT c.id, c.comment, c.post_id, c.post_type, c.user_id, c.parent_comment, c.created_at, c.updated_at,
-                u.name as user_name, u.avatar as user_avatar, u.slug as user_slug
+                u.name as user_name, u.avatar as user_avatar
             FROM comments c
             LEFT JOIN users u ON u.id = c.user_id
             WHERE c.post_id = ? AND c.post_type = ? AND c.parent_comment IS NULL
@@ -359,7 +359,7 @@ exports.getCommentsByChapter = async (req, res) => {
         if (topIds.length > 0) {
             const [replies] = await db.query(
                 `SELECT c.id, c.comment, c.post_id, c.post_type, c.user_id, c.parent_comment, c.created_at, c.updated_at,
-                    u.name as user_name, u.avatar as user_avatar, u.slug as user_slug
+                    u.name as user_name, u.avatar as user_avatar
                 FROM comments c
                 LEFT JOIN users u ON u.id = c.user_id
                 WHERE c.parent_comment IN (?)
@@ -461,7 +461,7 @@ exports.addCommentToChapter = async (req, res) => {
         // Fetch created comment
         const [rows] = await db.query(
             `SELECT c.id, c.comment, c.post_id, c.post_type, c.user_id, c.parent_comment, c.created_at, c.updated_at,
-                u.name as user_name, u.avatar as user_avatar, u.slug as user_slug
+                u.name as user_name, u.avatar as user_avatar
             FROM comments c
             LEFT JOIN users u ON u.id = c.user_id
             WHERE c.id = ?`,
@@ -485,7 +485,7 @@ exports.getRecentComments = async (req, res) => {
 
         const [rows] = await db.query(
             `SELECT c.id, c.comment, c.post_id, c.post_type, c.manga_id, c.user_id, c.parent_comment, c.created_at, c.updated_at,
-                u.name as user_name, u.avatar as user_avatar, u.slug as user_slug,
+                u.name as user_name, u.avatar as user_avatar,
                 m.name as manga_name, m.slug as manga_slug,
                 ch.name as chapter_name, ch.slug as chapter_slug
             FROM comments c

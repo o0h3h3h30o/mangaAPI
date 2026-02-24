@@ -41,8 +41,8 @@ exports.getChapterDetail = async (req, res) => {
             views: ch.view || 0,
             order: parseInt(ch.number) || 0,
             chapter_number: parseFloat(ch.number) || 0,
-            created_at: ch.created_at ? new Date(ch.created_at).toISOString() : new Date().toISOString(),
-            updated_at: ch.updated_at ? new Date(ch.updated_at).toISOString() : new Date().toISOString(),
+            created_at: (() => { const dt = new Date(ch.created_at); return (!ch.created_at || isNaN(dt.getTime())) ? new Date().toISOString() : dt.toISOString(); })(),
+            updated_at: (() => { const dt = new Date(ch.updated_at); return (!ch.updated_at || isNaN(dt.getTime())) ? new Date().toISOString() : dt.toISOString(); })(),
             content: [], // images loaded separately via getImages
             manga: {
                 id: manga.id,
@@ -113,7 +113,7 @@ exports.getChapterImages = async (req, res) => {
                 slug: ch.slug,
                 views: ch.view || 0,
                 order: parseInt(ch.number) || 0,
-                created_at: ch.created_at ? new Date(ch.created_at).toISOString() : new Date().toISOString(),
+                created_at: (() => { const dt = new Date(ch.created_at); return (!ch.created_at || isNaN(dt.getTime())) ? new Date().toISOString() : dt.toISOString(); })(),
                 manga: {
                     id: manga.id,
                     name: manga.name,

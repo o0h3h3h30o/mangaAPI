@@ -419,6 +419,12 @@ exports.getMangaByCategory = async (req, res) => {
 
 // Get manga detail by slug — cached 5min, with parallel sub-queries
 exports.getMangaBySlug = async (req, res) => {
+    const safeISO = (d) => {
+        if (!d) return new Date().toISOString();
+        const dt = new Date(d);
+        return isNaN(dt.getTime()) ? new Date().toISOString() : dt.toISOString();
+    };
+
     try {
         const { slug } = req.params;
 
@@ -456,7 +462,7 @@ exports.getMangaBySlug = async (req, res) => {
                 `SELECT id, name, slug, view, created_at, number
                 FROM chapter
                 WHERE manga_id = ? AND is_show = 1
-                ORDER BY CAST(number AS UNSIGNED) ASC
+                ORDER BY CAST(number AS DECIMAL(10,2)) ASC
                 LIMIT 1`,
                 [m.id]
             ).catch(() => [[]]),
@@ -496,7 +502,7 @@ exports.getMangaBySlug = async (req, res) => {
                 slug: ch.slug || `chapter-${ch.number}`,
                 views: ch.view || 0,
                 order: parseInt(ch.number) || 1,
-                created_at: ch.created_at ? new Date(ch.created_at).toISOString() : new Date().toISOString(),
+                created_at: safeISO(ch.created_at),
             };
         }
 
@@ -510,7 +516,7 @@ exports.getMangaBySlug = async (req, res) => {
                 slug: m.chap_1_slug || '',
                 views: 0,
                 order: 0,
-                created_at: m.time_chap_1 ? new Date(m.time_chap_1).toISOString() : new Date().toISOString(),
+                created_at: safeISO(m.time_chap_1 ? m.time_chap_1 * 1000 : null),
             };
         }
 
@@ -546,8 +552,8 @@ exports.getMangaBySlug = async (req, res) => {
             is_hot: m.hot === 1,
             is_reviewed: 0,
             cover_full_url: `${process.env.COVER_CDN_URL}/cover/${m.slug}.jpg`,
-            created_at: m.created_at ? new Date(m.created_at).toISOString() : new Date().toISOString(),
-            updated_at: m.update_at ? new Date(m.update_at * 1000).toISOString() : (m.updated_at ? new Date(m.updated_at).toISOString() : new Date().toISOString()),
+            created_at: safeISO(m.created_at),
+            updated_at: m.update_at ? safeISO(m.update_at * 1000) : safeISO(m.updated_at),
             genres,
             author: author,
             artist: artist,
@@ -715,10 +721,16 @@ exports.getChaptersByManga = async (req, res) => {
                 `SELECT id, name, slug, number, view, created_at, updated_at
                 FROM chapter
                 WHERE manga_id = ? AND is_show = 1
-                ORDER BY CAST(number AS UNSIGNED) ${sort}
+                ORDER BY CAST(number AS DECIMAL(10,2)) ${sort}
                 LIMIT ?, ?`,
                 [mangaId, offset, perPage]
             );
+
+            const safeISO = (d) => {
+                if (!d) return new Date().toISOString();
+                const dt = new Date(d);
+                return isNaN(dt.getTime()) ? new Date().toISOString() : dt.toISOString();
+            };
 
             chapters = rows.map(ch => ({
                 id: ch.id,
@@ -728,8 +740,8 @@ exports.getChaptersByManga = async (req, res) => {
                 views: ch.view || 0,
                 order: parseInt(ch.number) || 0,
                 chapter_number: parseFloat(ch.number) || 0,
-                created_at: ch.created_at ? new Date(ch.created_at).toISOString() : new Date().toISOString(),
-                updated_at: ch.updated_at ? new Date(ch.updated_at).toISOString() : new Date().toISOString(),
+                created_at: safeISO(ch.created_at),
+                updated_at: safeISO(ch.updated_at),
             }));
         } catch (e) {
             console.error('Chapter table query error:', e.message);
