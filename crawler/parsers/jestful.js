@@ -12,9 +12,21 @@ const BASE_URL = 'https://jestful.net';
 
 const name = 'jestful';
 const baseUrl = BASE_URL;
+const homepagePages = 3; // Crawl first 3 pages
 
 function match(url) {
     return url.includes('jestful.net');
+}
+
+/**
+ * Get homepage URLs to crawl (paginated)
+ */
+function getHomepageUrls() {
+    const urls = [];
+    for (let page = 1; page <= homepagePages; page++) {
+        urls.push(`${BASE_URL}/manga-list.html?listType=pagination&page=${page}&sort=last_update&sort_type=DESC`);
+    }
+    return urls;
 }
 
 /**
@@ -293,6 +305,7 @@ module.exports = {
     name,
     baseUrl,
     match,
+    getHomepageUrls,
     parseHomepage,
     extractMangaInfo,
     getFullChapterList,

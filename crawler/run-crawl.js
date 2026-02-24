@@ -37,10 +37,21 @@ async function main() {
 
         for (const siteParser of parsers) {
             console.log(`=== DRY RUN: ${siteParser.name} (${siteParser.baseUrl}) ===\n`);
-            const html = await base.fetchPage(siteParser.baseUrl);
-            const items = siteParser.parseHomepage(html);
 
-            console.log(`Found ${items.length} manga:\n`);
+            const urls = siteParser.getHomepageUrls
+                ? siteParser.getHomepageUrls()
+                : [siteParser.baseUrl];
+
+            const items = [];
+            for (let i = 0; i < urls.length; i++) {
+                console.log(`[Page ${i + 1}/${urls.length}] ${urls[i]}`);
+                const html = await base.fetchPage(urls[i]);
+                const pageItems = siteParser.parseHomepage(html);
+                console.log(`  Found ${pageItems.length} manga\n`);
+                items.push(...pageItems);
+            }
+
+            console.log(`Total: ${items.length} manga:\n`);
             for (const item of items) {
                 console.log(`  ${item.name}`);
                 console.log(`    URL: ${item.url}`);

@@ -367,10 +367,21 @@ async function crawlSite(parserName) {
     console.log(`=== Crawl: ${siteParser.name} (${siteParser.baseUrl}) ===`);
     console.log(`Time: ${new Date().toISOString()}\n`);
 
-    const html = await base.fetchPage(siteParser.baseUrl);
-    const items = siteParser.parseHomepage(html);
+    // Get URLs to crawl (paginated or single baseUrl)
+    const urls = siteParser.getHomepageUrls
+        ? siteParser.getHomepageUrls()
+        : [siteParser.baseUrl];
 
-    console.log(`Found ${items.length} manga on homepage\n`);
+    const items = [];
+    for (let i = 0; i < urls.length; i++) {
+        console.log(`[Page ${i + 1}/${urls.length}] ${urls[i]}`);
+        const html = await base.fetchPage(urls[i]);
+        const pageItems = siteParser.parseHomepage(html);
+        console.log(`  Found ${pageItems.length} manga\n`);
+        items.push(...pageItems);
+    }
+
+    console.log(`Total: ${items.length} manga from ${urls.length} page(s)\n`);
 
     const results = { skipped: 0, updated: 0, created: 0, linked: 0, errors: 0 };
 
