@@ -90,9 +90,9 @@ exports.getChapterImages = async (req, res) => {
 
         const ch = chapterRows[0];
 
-        // Get pages (images) for this chapter
+        // Get pages (images) for this chapter, grouped by slug to avoid duplicates from re-crawling
         const [pages] = await db.query(
-            'SELECT id, slug, image, external FROM page WHERE chapter_id = ? ORDER BY slug ASC',
+            'SELECT MIN(id) as id, slug, image, external FROM page WHERE chapter_id = ? GROUP BY slug ORDER BY CAST(slug AS UNSIGNED) ASC',
             [ch.id]
         );
 
