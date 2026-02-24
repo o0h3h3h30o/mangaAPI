@@ -42,37 +42,33 @@ async function processManga(manga, idx, total) {
         return 'skipped';
     }
 
-    // Get first source URL from from_manga18fx
-    const sourceUrl = manga.from_manga18fx.split(',').map(s => s.trim()).filter(Boolean)[0];
-    if (!sourceUrl) {
+    // Get all source URLs from from_manga18fx
+    const sourceUrls = manga.from_manga18fx.split(',').map(s => s.trim()).filter(Boolean);
+    if (!sourceUrls.length) {
         console.error(`[${idx}/${total}] NO_URL: ${manga.slug}`);
         return 'failed';
     }
 
-    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-        try {
-            // Step 1: Fetch the source page
-            const html = await fetchPage(sourceUrl);
+    // Try each source URL until one works
+    for (const sourceUrl of sourceUrls) {
+        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            try {
+                const html = await fetchPage(sourceUrl);
+                const coverUrl = extractCoverUrl(html);
+                if (!coverUrl) break; // try next source URL
 
-            // Step 2: Extract cover image URL
-            const coverUrl = extractCoverUrl(html);
-            if (!coverUrl) {
-                console.error(`[${idx}/${total}] NO_COVER: ${manga.slug} — could not find img in info-cover`);
-                return 'failed';
+                await downloadAndProcessCover(coverUrl, slug);
+                console.log(`[${idx}/${total}] OK: ${manga.slug}`);
+                return 'success';
+            } catch (err) {
+                if (attempt === MAX_RETRIES) break; // try next source URL
+                await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
             }
-
-            // Step 3: Download → resize → save (full + thumb)
-            await downloadAndProcessCover(coverUrl, slug);
-            console.log(`[${idx}/${total}] OK: ${manga.slug}`);
-            return 'success';
-        } catch (err) {
-            if (attempt === MAX_RETRIES) {
-                console.error(`[${idx}/${total}] FAIL: ${manga.slug} — ${err.message}`);
-                return 'failed';
-            }
-            await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
         }
     }
+
+    console.error(`[${idx}/${total}] FAIL: ${manga.slug} — all source URLs failed`);
+    return 'failed';
 }
 
 async function processChunk(items, startIndex, total) {
