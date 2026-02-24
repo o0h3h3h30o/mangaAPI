@@ -184,7 +184,7 @@ function extractMangaInfo(html) {
         }
     });
 
-    return { name: mangaName, coverUrl, otherNames, genres, status, authors, description };
+    return { name: mangaName, slugName: h3Title, coverUrl, otherNames, genres, status, authors, description };
 }
 
 /**

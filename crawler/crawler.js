@@ -138,7 +138,7 @@ async function findOrCreateTag(name) {
  * Insert new manga record with categories and authors
  */
 async function insertManga(data) {
-    const slug = base.generateSlug(data.name);
+    const slug = base.generateSlug(data.slugName || data.name);
     const statusId = mapStatusId(data.status);
 
     const [result] = await db.query(
@@ -371,6 +371,7 @@ async function processManga(item) {
 
             const mangaId = await insertManga({
                 name: info.name || item.name,
+                slugName: info.slugName || item.name,
                 description: info.description,
                 otherNames: info.otherNames,
                 authors: info.authors,
