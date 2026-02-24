@@ -67,25 +67,49 @@ function parseHomepage(html) {
 }
 
 /**
+ * Check if text contains Japanese characters (Kanji, Hiragana, Katakana)
+ */
+function isJapanese(text) {
+    return /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\u4e00-\u9faf\u3400-\u4dbf]/.test(text);
+}
+
+/**
  * Parse manga detail page → extract manga info
+ * name = Japanese name (from otherNames), otherNames = all names combined
  */
 function extractMangaInfo(html) {
     const $ = cheerio.load(html);
 
-    // Name
-    const name = $('ul.manga-info h3').first().text().trim();
+    // Title from h3 (usually romaji/english)
+    const h3Title = $('ul.manga-info h3').first().text().trim();
 
     // Cover image
     const coverUrl = $('.info-cover img.thumbnail').attr('src') || '';
 
-    // Other names
-    let otherNames = '';
+    // Raw other names from page
+    let rawOtherNames = '';
     $('ul.manga-info li').each((_, el) => {
         const text = $(el).text();
         if (text.includes('Other name')) {
-            otherNames = text.replace(/.*Other name\s*\(s\)\s*:\s*/i, '').trim();
+            rawOtherNames = text.replace(/.*Other name\s*\(s\)\s*:\s*/i, '').trim();
         }
     });
+
+    // Split other names and find Japanese name
+    const altNames = rawOtherNames
+        ? rawOtherNames.split(/,\s*/).map(n => n.trim()).filter(Boolean)
+        : [];
+    const jpName = altNames.find(n => isJapanese(n));
+
+    // name = Japanese name (preferred), fallback to h3 title
+    const mangaName = jpName || h3Title;
+
+    // otherNames = all unique names combined (JP names, EN names, h3 title)
+    const allNames = [...altNames];
+    if (h3Title && !allNames.some(n => n.toLowerCase() === h3Title.toLowerCase())) {
+        allNames.push(h3Title);
+    }
+    const otherNames = allNames.join(', ');
 
     // Genres
     const genres = [];
@@ -131,7 +155,7 @@ function extractMangaInfo(html) {
         }
     });
 
-    return { name, coverUrl, otherNames, genres, status, authors, description };
+    return { name: mangaName, coverUrl, otherNames, genres, status, authors, description };
 }
 
 /**
