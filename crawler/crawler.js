@@ -1,21 +1,11 @@
 /**
  * Core Crawler Logic
  * Crawl homepage → check DB → insert new chapters (is_show = 0)
+ * Supports multiple source sites via parser registry
  */
 const db = require('../config/database');
-const parser = require('./parsers/jestful');
-
-const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
-
-// --------------- HTTP ---------------
-
-async function fetchPage(url) {
-    const res = await fetch(url, {
-        headers: { 'User-Agent': USER_AGENT },
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
-    return res.text();
-}
+const { getParser, getAllParsers, getParserByName } = require('./parsers');
+const base = require('./parsers/base');
 
 // --------------- DB Lookups ---------------
 
@@ -74,7 +64,7 @@ function mapStatusId(status) {
  * Find or create a category by name, return category_id
  */
 async function findOrCreateCategory(name) {
-    const slug = parser.generateSlug(name);
+    const slug = base.generateSlug(name);
     const [rows] = await db.query(
         'SELECT id FROM category WHERE slug = ? LIMIT 1',
         [slug]
@@ -93,7 +83,7 @@ async function findOrCreateCategory(name) {
  * Find or create an author by name, return author_id
  */
 async function findOrCreateAuthor(name) {
-    const slug = parser.generateSlug(name);
+    const slug = base.generateSlug(name);
     const [rows] = await db.query(
         'SELECT id FROM author WHERE slug = ? LIMIT 1',
         [slug]
@@ -112,7 +102,7 @@ async function findOrCreateAuthor(name) {
  * Insert new manga record with categories and authors
  */
 async function insertManga(data) {
-    const slug = parser.generateSlug(data.name);
+    const slug = base.generateSlug(data.name);
     const statusId = mapStatusId(data.status);
 
     const [result] = await db.query(
@@ -180,7 +170,7 @@ async function insertChapters(mangaId, chapters) {
     const values = chapters.map(ch => [
         mangaId,
         ch.title || `Chapter ${ch.number}`,
-        parser.generateChapterSlug(ch.number),
+        base.generateChapterSlug(ch.number),
         ch.number,
         0,  // is_show = 0
         ch.url || '',
@@ -238,10 +228,12 @@ async function updateMangaDenormalized(mangaId) {
 
 /**
  * Process a single manga item from homepage
+ * Automatically detects the correct parser from item.url
  */
 async function processManga(item) {
     const sourceUrl = item.url;
-    console.log(`\n[*] Processing: ${item.name} (latest: Ch.${item.latestChapterNum})`);
+    const siteParser = getParser(sourceUrl);
+    console.log(`\n[*] Processing: ${item.name} (latest: Ch.${item.latestChapterNum}) [${siteParser.name}]`);
 
     // Step 1: Check if manga exists by source URL
     let manga = await findMangaBySource(sourceUrl);
@@ -258,9 +250,9 @@ async function processManga(item) {
             return { status: 'skipped', name: item.name };
         }
 
-        // Fetch full chapter list via API
+        // Fetch full chapter list via parser
         console.log(`  [>] Fetching full chapter list...`);
-        const allChapters = await parser.getFullChapterList(sourceUrl);
+        const allChapters = await siteParser.getFullChapterList(sourceUrl);
         const newChapters = allChapters.filter(ch => ch.number > dbMax);
         console.log(`  [>] Found ${allChapters.length} total, ${newChapters.length} new`);
 
@@ -269,17 +261,17 @@ async function processManga(item) {
 
     } else {
         // === NEW MANGA ===
-        // Check by name first (có thể đã tồn tại từ source khác)
+        // Check by name first (could exist from another source)
         manga = await findMangaByName(item.name);
 
         if (manga) {
-            // Trùng tên → append source URL
+            // Name match → append source URL
             console.log(`  [~] Name match found: id=${manga.id}, "${manga.name}"`);
             await appendSourceUrl(manga.id, manga.from_manga18fx, sourceUrl);
 
-            // Fetch full chapter list via API
+            // Fetch full chapter list via parser
             console.log(`  [>] Fetching full chapter list...`);
-            const allChapters = await parser.getFullChapterList(sourceUrl);
+            const allChapters = await siteParser.getFullChapterList(sourceUrl);
             const dbMax = await getMaxChapterNumber(manga.id);
             const newChapters = allChapters.filter(ch => ch.number > dbMax);
             console.log(`  [>] Found ${allChapters.length} total, ${newChapters.length} new`);
@@ -288,10 +280,10 @@ async function processManga(item) {
             return { status: 'linked', name: item.name, mangaId: manga.id, inserted };
 
         } else {
-            // Manga hoàn toàn mới → fetch detail page để lấy info
+            // Brand new manga → fetch detail page for info
             console.log(`  [+] New manga, fetching detail...`);
-            const detailHtml = await fetchPage(sourceUrl);
-            const info = parser.extractMangaInfo(detailHtml);
+            const detailHtml = await base.fetchPage(sourceUrl);
+            const info = siteParser.extractMangaInfo(detailHtml);
             console.log(`  [+] Parsed: "${info.name}", genres=[${info.genres.join(', ')}], status=${info.status}`);
 
             const mangaId = await insertManga({
@@ -300,14 +292,13 @@ async function processManga(item) {
                 otherNames: info.otherNames,
                 authors: info.authors,
                 status: info.status,
-                coverUrl: info.coverUrl,
                 genres: info.genres,
                 sourceUrl: sourceUrl,
             });
 
-            // Fetch full chapter list via API
+            // Fetch full chapter list via parser
             console.log(`  [>] Fetching full chapter list...`);
-            const allChapters = await parser.getFullChapterList(sourceUrl);
+            const allChapters = await siteParser.getFullChapterList(sourceUrl);
             console.log(`  [>] Found ${allChapters.length} chapters`);
 
             const inserted = await insertChapters(mangaId, allChapters);
@@ -317,14 +308,15 @@ async function processManga(item) {
 }
 
 /**
- * Main: crawl homepage and process all manga
+ * Crawl a single source site by parser name
  */
-async function crawlHomepage() {
-    console.log('=== Crawl Homepage: jestful.net ===');
+async function crawlSite(parserName) {
+    const siteParser = getParserByName(parserName);
+    console.log(`=== Crawl: ${siteParser.name} (${siteParser.baseUrl}) ===`);
     console.log(`Time: ${new Date().toISOString()}\n`);
 
-    const html = await fetchPage(parser.BASE_URL);
-    const items = parser.parseHomepage(html);
+    const html = await base.fetchPage(siteParser.baseUrl);
+    const items = siteParser.parseHomepage(html);
 
     console.log(`Found ${items.length} manga on homepage\n`);
 
@@ -340,7 +332,7 @@ async function crawlHomepage() {
         }
     }
 
-    console.log('\n=== Summary ===');
+    console.log(`\n=== Summary [${siteParser.name}] ===`);
     console.log(`Skipped: ${results.skipped}`);
     console.log(`Updated: ${results.updated}`);
     console.log(`Created: ${results.created}`);
@@ -350,8 +342,20 @@ async function crawlHomepage() {
     return results;
 }
 
+/**
+ * Crawl all registered source sites
+ */
+async function crawlAll() {
+    const allResults = {};
+    for (const siteParser of getAllParsers()) {
+        allResults[siteParser.name] = await crawlSite(siteParser.name);
+    }
+    return allResults;
+}
+
 module.exports = {
-    crawlHomepage,
+    crawlSite,
+    crawlAll,
     processManga,
     findMangaBySource,
     findMangaByName,
@@ -359,5 +363,4 @@ module.exports = {
     insertChapters,
     insertManga,
     updateMangaDenormalized,
-    fetchPage,
 };

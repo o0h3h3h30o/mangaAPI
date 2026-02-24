@@ -3,8 +3,18 @@
  * Extracts manga and chapter data from homepage and detail pages
  */
 const cheerio = require('cheerio');
+const { parseChapterNumber } = require('./base');
 
 const BASE_URL = 'https://jestful.net';
+
+// --------------- Parser Interface ---------------
+
+const name = 'jestful';
+const baseUrl = BASE_URL;
+
+function match(url) {
+    return url.includes('jestful.net');
+}
 
 /**
  * Parse homepage HTML → array of manga items with recent chapters
@@ -106,8 +116,8 @@ function extractMangaInfo(html) {
     const authorMatch = html.match(/manga-author-(.*?)\.html/g);
     if (authorMatch) {
         authorMatch.forEach(m => {
-            const name = m.replace('manga-author-', '').replace('.html', '');
-            if (name && !authors.includes(name)) authors.push(name);
+            const authorName = m.replace('manga-author-', '').replace('.html', '');
+            if (authorName && !authors.includes(authorName)) authors.push(authorName);
         });
     }
 
@@ -121,28 +131,33 @@ function extractMangaInfo(html) {
         }
     });
 
-    return {
-        name,
-        coverUrl,
-        otherNames,
-        genres,
-        status,
-        authors,
-        description,
-    };
+    return { name, coverUrl, otherNames, genres, status, authors, description };
 }
 
 /**
- * Extract manga slug from URL: "hwms-shamballad.html" → "shamballad"
+ * Get full chapter list for a manga by its source URL
  */
+async function getFullChapterList(mangaSourceUrl) {
+    const slug = extractSlugFromUrl(mangaSourceUrl);
+    if (!slug) throw new Error(`Cannot extract slug from: ${mangaSourceUrl}`);
+
+    const html = await fetchChapterList(slug);
+    return parseChapterListResponse(html);
+}
+
+// --------------- Internal Helpers ---------------
+
+function buildFullUrl(relativePath) {
+    if (!relativePath) return '';
+    if (relativePath.startsWith('http')) return relativePath;
+    return `${BASE_URL}/${relativePath.replace(/^\//, '')}`;
+}
+
 function extractSlugFromUrl(url) {
     const match = url.match(/hwms-(.*?)\.html/);
     return match ? match[1] : null;
 }
 
-/**
- * Generate random string (like PHP's generateRandomString)
- */
 function generateRandomString(length) {
     const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     let result = '';
@@ -152,11 +167,6 @@ function generateRandomString(length) {
     return result;
 }
 
-/**
- * Fetch full chapter list via jestful API
- * URL: /app/manga/controllers/{random25}.lstc?slug={mangaSlug}
- * Returns HTML table with chapters
- */
 async function fetchChapterList(mangaSlug) {
     const randomStr = generateRandomString(25);
     const url = `${BASE_URL}/app/manga/controllers/${randomStr}.lstc?slug=${mangaSlug}`;
@@ -172,10 +182,6 @@ async function fetchChapterList(mangaSlug) {
     return res.text();
 }
 
-/**
- * Parse chapter list API response (HTML table)
- * Each row: <tr> <a href="...">Chapter X</a> <time>...</time> </tr>
- */
 function parseChapterListResponse(html) {
     const $ = cheerio.load(html);
     const chapters = [];
@@ -186,14 +192,14 @@ function parseChapterListResponse(html) {
         if (!$a.length) return;
 
         const href = $a.attr('href') || '';
-        const name = $a.text().trim();
-        const number = parseChapterNumber(name);
+        const chName = $a.text().trim();
+        const number = parseChapterNumber(chName);
         const timeText = $row.find('time').text().trim();
 
         if (number !== null) {
             chapters.push({
                 number,
-                title: name,
+                title: chName,
                 url: buildFullUrl(href),
                 created_at: timeText || null,
             });
@@ -203,64 +209,13 @@ function parseChapterListResponse(html) {
     return chapters;
 }
 
-/**
- * Get full chapter list for a manga by its source URL
- */
-async function getFullChapterList(mangaSourceUrl) {
-    const slug = extractSlugFromUrl(mangaSourceUrl);
-    if (!slug) throw new Error(`Cannot extract slug from: ${mangaSourceUrl}`);
-
-    const html = await fetchChapterList(slug);
-    return parseChapterListResponse(html);
-}
-
-/**
- * Extract chapter number from text like "◈ Ch. 4.1" or "Chapter 73"
- */
-function parseChapterNumber(text) {
-    if (!text) return null;
-    const match = text.match(/(?:ch(?:apter)?\.?\s*)(\d+(?:\.\d+)?)/i);
-    return match ? parseFloat(match[1]) : null;
-}
-
-/**
- * Generate slug from manga name
- */
-function generateSlug(name) {
-    return name
-        .toLowerCase()
-        .replace(/[^\w\s-]/g, '')
-        .replace(/\s+/g, '-')
-        .replace(/-+/g, '-')
-        .replace(/^-|-$/g, '');
-}
-
-/**
- * Generate chapter slug from number: 4.1 → "chapter-4-1"
- */
-function generateChapterSlug(number) {
-    return `chapter-${String(number).replace('.', '-')}`;
-}
-
-/**
- * Build full URL from relative path
- */
-function buildFullUrl(relativePath) {
-    if (!relativePath) return '';
-    if (relativePath.startsWith('http')) return relativePath;
-    return `${BASE_URL}/${relativePath.replace(/^\//, '')}`;
-}
+// --------------- Export ---------------
 
 module.exports = {
-    BASE_URL,
+    name,
+    baseUrl,
+    match,
     parseHomepage,
     extractMangaInfo,
-    parseChapterListResponse,
-    fetchChapterList,
     getFullChapterList,
-    extractSlugFromUrl,
-    parseChapterNumber,
-    generateSlug,
-    generateChapterSlug,
-    buildFullUrl,
 };
