@@ -275,17 +275,23 @@ async function updateMangaDenormalized(mangaId) {
     const ch1 = rows[0];
     const ch2 = rows[1] || null;
 
+    const now = Math.floor(Date.now() / 1000);
+    const toUnix = (d) => {
+        const ts = Math.floor(new Date(d).getTime() / 1000);
+        return isNaN(ts) ? now : ts;
+    };
+
     const updates = {
         chapter_1: ch1.number,
         chap_1_slug: ch1.slug,
-        time_chap_1: Math.floor(new Date(ch1.created_at).getTime() / 1000),
-        update_at: Math.floor(Date.now() / 1000),
+        time_chap_1: toUnix(ch1.created_at),
+        update_at: now,
     };
 
     if (ch2) {
         updates.chapter_2 = ch2.number;
         updates.chap_2_slug = ch2.slug;
-        updates.time_chap_2 = Math.floor(new Date(ch2.created_at).getTime() / 1000);
+        updates.time_chap_2 = toUnix(ch2.created_at);
     }
 
     const sets = Object.keys(updates).map(k => `${k} = ?`).join(', ');
