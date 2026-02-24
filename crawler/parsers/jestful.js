@@ -246,6 +246,45 @@ function parseChapterListResponse(html) {
     return chapters;
 }
 
+/**
+ * Get page images for a chapter
+ * 1. Fetch chapter page → extract chapter_id from #chapter input
+ * 2. Call image API: /app/manga/controllers/{random30}iog?cid={chapter_id}
+ * 3. Parse response: p img → image URLs
+ */
+async function getPageImages(chapterUrl) {
+    const { fetchPage } = require('./base');
+
+    // Step 1: Fetch chapter page, extract chapter_id
+    const html = await fetchPage(chapterUrl);
+    const $ = cheerio.load(html);
+    const chapterId = $('#chapter').attr('value') || $('#chapter').val();
+    if (!chapterId) throw new Error(`Cannot find #chapter value from: ${chapterUrl}`);
+
+    // Step 2: Call image API
+    const randomStr = generateRandomString(30);
+    const apiUrl = `${BASE_URL}/app/manga/controllers/${randomStr}iog?cid=${chapterId}`;
+
+    const res = await fetch(apiUrl, {
+        headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'Referer': 'https://jestful.net',
+        },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status} fetching page images for cid=${chapterId}`);
+    const imgHtml = await res.text();
+
+    // Step 3: Parse p img → image URLs
+    const $img = cheerio.load(imgHtml);
+    const images = [];
+    $img('p img').each((_, el) => {
+        const src = $img(el).attr('src') || $img(el).attr('data-src') || '';
+        if (src) images.push(src);
+    });
+
+    return images;
+}
+
 // --------------- Export ---------------
 
 module.exports = {
@@ -255,4 +294,5 @@ module.exports = {
     parseHomepage,
     extractMangaInfo,
     getFullChapterList,
+    getPageImages,
 };
