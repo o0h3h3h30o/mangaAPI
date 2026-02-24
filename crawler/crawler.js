@@ -6,7 +6,6 @@
 const db = require('../config/database');
 const { getParser, getAllParsers, getParserByName } = require('./parsers');
 const base = require('./parsers/base');
-const { downloadAndProcessCover } = require('./cover-processor');
 const { cacheDelPrefix } = require('../config/cache');
 
 // --------------- DB Lookups ---------------
@@ -143,8 +142,8 @@ async function insertManga(data) {
     const statusId = mapStatusId(data.status);
 
     const [result] = await db.query(
-        `INSERT INTO manga (name, slug, summary, otherNames, from_manga18fx, status_id, is_public, created_at, create_at)
-         VALUES (?, ?, ?, ?, ?, ?, 1, NOW(), UNIX_TIMESTAMP())`,
+        `INSERT INTO manga (name, slug, summary, otherNames, from_manga18fx, status_id, is_public, created_at, updated_at, create_at, update_at)
+         VALUES (?, ?, ?, ?, ?, ?, 1, NOW(), NOW(), UNIX_TIMESTAMP(), UNIX_TIMESTAMP())`,
         [
             data.name,
             slug,
@@ -266,7 +265,7 @@ async function updateMangaDenormalized(mangaId) {
     const [rows] = await db.query(
         `SELECT number, slug, name, created_at FROM chapter
          WHERE manga_id = ? AND is_show = 1
-         ORDER BY number DESC LIMIT 2`,
+         ORDER BY CAST(number AS DECIMAL(10,2)) DESC, id DESC LIMIT 2`,
         [mangaId]
     );
 
@@ -380,16 +379,6 @@ async function processManga(item) {
                 sourceUrl: sourceUrl,
             });
 
-            // Download & resize cover image
-            if (info.coverUrl) {
-                try {
-                    const slug = base.generateSlug(info.name || item.name);
-                    await downloadAndProcessCover(info.coverUrl, slug);
-                } catch (err) {
-                    console.error(`  [!] Cover download failed: ${err.message}`);
-                }
-            }
-
             // Fetch full chapter list via parser
             console.log(`  [>] Fetching full chapter list...`);
             const allChapters = await siteParser.getFullChapterList(sourceUrl);
@@ -487,20 +476,8 @@ async function insertExternalPages(chapterId, imageUrls) {
 async function publishChapter(chapterId, mangaId) {
     await db.query('UPDATE chapter SET is_show = 1 WHERE id = ?', [chapterId]);
 
-    // Sync manga latest chapter info
-    const [rows] = await db.query(
-        `SELECT number, slug, created_at FROM chapter
-         WHERE manga_id = ? AND is_show = 1
-         ORDER BY CAST(number AS DECIMAL(10,2)) DESC, id DESC LIMIT 1`,
-        [mangaId]
-    );
-    if (rows.length > 0) {
-        const ch = rows[0];
-        await db.query(
-            `UPDATE manga SET chapter_1 = ?, chap_1_slug = ?, time_chap_1 = UNIX_TIMESTAMP(), update_at = UNIX_TIMESTAMP() WHERE id = ?`,
-            [parseFloat(ch.number) || 0, ch.slug, mangaId]
-        );
-    }
+    // Sync manga denormalized fields (chapter_1, chapter_2, update_at, etc.)
+    await updateMangaDenormalized(mangaId);
 
     // Invalidate caches
     const [[manga]] = await db.query('SELECT slug FROM manga WHERE id = ?', [mangaId]);
