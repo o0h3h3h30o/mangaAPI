@@ -362,14 +362,14 @@ async function processManga(item) {
 /**
  * Crawl a single source site by parser name
  */
-async function crawlSite(parserName) {
+async function crawlSite(parserName, options = {}) {
     const siteParser = getParserByName(parserName);
     console.log(`=== Crawl: ${siteParser.name} (${siteParser.baseUrl}) ===`);
     console.log(`Time: ${new Date().toISOString()}\n`);
 
     // Get URLs to crawl (paginated or single baseUrl)
     const urls = siteParser.getHomepageUrls
-        ? siteParser.getHomepageUrls()
+        ? siteParser.getHomepageUrls(options.pages)
         : [siteParser.baseUrl];
 
     const items = [];
@@ -408,10 +408,10 @@ async function crawlSite(parserName) {
 /**
  * Crawl all registered source sites
  */
-async function crawlAll() {
+async function crawlAll(options = {}) {
     const allResults = {};
     for (const siteParser of getAllParsers()) {
-        allResults[siteParser.name] = await crawlSite(siteParser.name);
+        allResults[siteParser.name] = await crawlSite(siteParser.name, options);
     }
     return allResults;
 }

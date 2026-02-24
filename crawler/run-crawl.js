@@ -3,10 +3,13 @@
  * CLI script to run the crawler
  *
  * Usage:
- *   node crawler/run-crawl.js                        # Crawl all sources
- *   node crawler/run-crawl.js --source jestful        # Crawl one source
- *   node crawler/run-crawl.js --source jestful --dry-run  # Parse only, no DB writes
- *   node crawler/run-crawl.js --list                  # List available parsers
+ *   node crawler/run-crawl.js                              # Crawl all sources (default 3 pages)
+ *   node crawler/run-crawl.js --pages 10                   # Crawl 10 pages
+ *   node crawler/run-crawl.js --source jestful             # Crawl one source
+ *   node crawler/run-crawl.js --source jestful --pages 5   # Crawl one source, 5 pages
+ *   node crawler/run-crawl.js --dry-run                    # Parse only, no DB writes
+ *   node crawler/run-crawl.js --dry-run --pages 10         # Dry-run 10 pages
+ *   node crawler/run-crawl.js --list                       # List available parsers
  */
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 
@@ -14,12 +17,20 @@ const { crawlSite, crawlAll } = require('./crawler');
 const { getAllParsers, getParserByName } = require('./parsers');
 const base = require('./parsers/base');
 
-async function main() {
+function parseArgs() {
     const args = process.argv.slice(2);
-    const isDryRun = args.includes('--dry-run');
-    const isList = args.includes('--list');
     const sourceIdx = args.indexOf('--source');
-    const sourceName = sourceIdx !== -1 ? args[sourceIdx + 1] : null;
+    const pagesIdx = args.indexOf('--pages');
+    return {
+        isDryRun: args.includes('--dry-run'),
+        isList: args.includes('--list'),
+        sourceName: sourceIdx !== -1 ? args[sourceIdx + 1] : null,
+        pages: pagesIdx !== -1 ? parseInt(args[pagesIdx + 1], 10) : undefined,
+    };
+}
+
+async function main() {
+    const { isDryRun, isList, sourceName, pages } = parseArgs();
 
     // --list: show available parsers
     if (isList) {
@@ -31,6 +42,8 @@ async function main() {
         process.exit(0);
     }
 
+    if (pages) console.log(`Pages: ${pages}\n`);
+
     // --dry-run: parse homepage only, no DB
     if (isDryRun) {
         const parsers = sourceName ? [getParserByName(sourceName)] : getAllParsers();
@@ -39,7 +52,7 @@ async function main() {
             console.log(`=== DRY RUN: ${siteParser.name} (${siteParser.baseUrl}) ===\n`);
 
             const urls = siteParser.getHomepageUrls
-                ? siteParser.getHomepageUrls()
+                ? siteParser.getHomepageUrls(pages)
                 : [siteParser.baseUrl];
 
             const items = [];
@@ -66,9 +79,9 @@ async function main() {
     // Normal crawl
     try {
         if (sourceName) {
-            await crawlSite(sourceName);
+            await crawlSite(sourceName, { pages });
         } else {
-            await crawlAll();
+            await crawlAll({ pages });
         }
     } catch (err) {
         console.error('Fatal error:', err);

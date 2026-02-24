@@ -12,7 +12,7 @@ const BASE_URL = 'https://jestful.net';
 
 const name = 'jestful';
 const baseUrl = BASE_URL;
-const homepagePages = 3; // Crawl first 3 pages
+const DEFAULT_PAGES = 3;
 
 function match(url) {
     return url.includes('jestful.net');
@@ -20,10 +20,12 @@ function match(url) {
 
 /**
  * Get homepage URLs to crawl (paginated)
+ * @param {number} [pages] - override number of pages (default: 3)
  */
-function getHomepageUrls() {
+function getHomepageUrls(pages) {
+    const count = pages || DEFAULT_PAGES;
     const urls = [];
-    for (let page = 1; page <= homepagePages; page++) {
+    for (let page = 1; page <= count; page++) {
         urls.push(`${BASE_URL}/manga-list.html?listType=pagination&page=${page}&sort=last_update&sort_type=DESC`);
     }
     return urls;
