@@ -24,32 +24,33 @@ function parseHomepage(html) {
     const $ = cheerio.load(html);
     const results = [];
 
-    $('.itemupdate').each((_, el) => {
+    $('.thumb-item-flow').each((_, el) => {
         const $item = $(el);
 
-        const name = $item.find('h3.title-h3').text().trim();
+        const name = $item.find('h3.title-thumb').text().trim();
         if (!name) return;
 
-        const relativeUrl = $item.find('a.title-h3-link').attr('href') || '';
+        // Manga URL from series-title link (href starts with "hwms-")
+        const relativeUrl = $item.find('.series-title a').attr('href') || '';
         const url = buildFullUrl(relativeUrl);
 
-        const coverUrl = $item.find('a.cover img').attr('data-src')
-            || $item.find('a.cover img').attr('src')
-            || '';
+        // Cover from data-bg attribute on .img-in-ratio
+        const coverUrl = $item.find('.img-in-ratio').attr('data-bg') || '';
 
-        // Chapters from homepage (usually 3 most recent)
+        // Chapter from "Last chapter: X" button
         const chapters = [];
-        $item.find('a.chapter').each((_, chEl) => {
+        $item.find('a.btn-danger').each((_, chEl) => {
             const $ch = $(chEl);
-            const title = $ch.attr('title') || '';
             const chapterRelUrl = $ch.attr('href') || '';
-            const chText = $ch.text().trim();
-            const number = parseChapterNumber(chText);
+            const chText = $ch.text().trim(); // "Last chapter: 4.1"
+            // Extract number from "Last chapter: X" format
+            const match = chText.match(/([\d.]+)\s*$/);
+            const number = match ? parseFloat(match[1]) : null;
 
             if (number !== null) {
                 chapters.push({
                     number,
-                    title,
+                    title: $ch.attr('title') || chText,
                     url: buildFullUrl(chapterRelUrl),
                 });
             }
