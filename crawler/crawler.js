@@ -187,16 +187,12 @@ async function processManga(item) {
             return { status: 'skipped', name: item.name };
         }
 
-        // Has new chapters → insert from homepage data (chapters > dbMax)
-        const newChapters = item.chapters.filter(ch => ch.number > dbMax);
+        // Fetch full chapter list via API
+        console.log(`  [>] Fetching full chapter list...`);
+        const allChapters = await parser.getFullChapterList(sourceUrl);
+        const newChapters = allChapters.filter(ch => ch.number > dbMax);
+        console.log(`  [>] Found ${allChapters.length} total, ${newChapters.length} new`);
 
-        if (newChapters.length === 0) {
-            console.log(`  [=] No new chapters from homepage listing`);
-            return { status: 'skipped', name: item.name };
-        }
-
-        // TODO: Nếu cần lấy đầy đủ chapters giữa dbMax và latestChapterNum,
-        // cần fetch detail page. Hiện tại chỉ insert chapters có trên homepage.
         const inserted = await insertChapters(manga.id, newChapters);
         return { status: 'updated', name: item.name, inserted };
 
@@ -210,9 +206,13 @@ async function processManga(item) {
             console.log(`  [~] Name match found: id=${manga.id}, "${manga.name}"`);
             await appendSourceUrl(manga.id, manga.from_manga18fx, sourceUrl);
 
-            // Insert new chapters
+            // Fetch full chapter list via API
+            console.log(`  [>] Fetching full chapter list...`);
+            const allChapters = await parser.getFullChapterList(sourceUrl);
             const dbMax = await getMaxChapterNumber(manga.id);
-            const newChapters = item.chapters.filter(ch => ch.number > dbMax);
+            const newChapters = allChapters.filter(ch => ch.number > dbMax);
+            console.log(`  [>] Found ${allChapters.length} total, ${newChapters.length} new`);
+
             const inserted = await insertChapters(manga.id, newChapters);
             return { status: 'linked', name: item.name, mangaId: manga.id, inserted };
 
@@ -225,8 +225,12 @@ async function processManga(item) {
                 sourceUrl: sourceUrl,
             });
 
-            // Insert chapters from homepage
-            const inserted = await insertChapters(mangaId, item.chapters);
+            // Fetch full chapter list via API
+            console.log(`  [>] Fetching full chapter list...`);
+            const allChapters = await parser.getFullChapterList(sourceUrl);
+            console.log(`  [>] Found ${allChapters.length} chapters`);
+
+            const inserted = await insertChapters(mangaId, allChapters);
             return { status: 'created', name: item.name, mangaId, inserted };
         }
     }

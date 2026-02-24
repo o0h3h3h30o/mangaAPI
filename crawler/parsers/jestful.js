@@ -57,59 +57,85 @@ function parseHomepage(html) {
 }
 
 /**
- * Parse manga detail page HTML → manga info + full chapter list
- * TODO: Selectors cần điều chỉnh khi có HTML detail page thực tế
+ * Extract manga slug from URL: "hwms-shamballad.html" → "shamballad"
  */
-function parseDetailPage(html) {
-    const $ = cheerio.load(html);
+function extractSlugFromUrl(url) {
+    const match = url.match(/hwms-(.*?)\.html/);
+    return match ? match[1] : null;
+}
 
-    const name = $('h1').first().text().trim()
-        || $('h2.widget-title').first().text().trim()
-        || '';
-
-    const description = $('.summary_content .post-content_item:contains("Description") .summary-content').text().trim()
-        || $('.manga-info-text li:contains("Description")').text().replace('Description :', '').trim()
-        || '';
-
-    const otherNames = $('.manga-info-text li:contains("Other name")').text().replace('Other name(s) :', '').trim()
-        || '';
-
-    const authors = [];
-    $('.manga-info-text li:contains("Author") a').each((_, el) => {
-        const author = $(el).text().trim();
-        if (author) authors.push(author);
-    });
-
-    const categories = [];
-    $('.manga-info-text li:contains("Genres") a, .genres-content a').each((_, el) => {
-        const cat = $(el).text().trim();
-        if (cat) categories.push(cat);
-    });
-
-    const statusText = $('.manga-info-text li:contains("Status")').text().toLowerCase() || '';
-    let status = 'ongoing';
-    if (statusText.includes('completed') || statusText.includes('finished')) {
-        status = 'completed';
+/**
+ * Generate random string (like PHP's generateRandomString)
+ */
+function generateRandomString(length) {
+    const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let result = '';
+    for (let i = 0; i < length; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
     }
+    return result;
+}
 
-    // Full chapter list from detail page
+/**
+ * Fetch full chapter list via jestful API
+ * URL: /app/manga/controllers/{random25}.lstc?slug={mangaSlug}
+ * Returns HTML table with chapters
+ */
+async function fetchChapterList(mangaSlug) {
+    const randomStr = generateRandomString(25);
+    const url = `${BASE_URL}/app/manga/controllers/${randomStr}.lstc?slug=${mangaSlug}`;
+
+    const res = await fetch(url, {
+        headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'Referer': 'http://jestful.net',
+        },
+    });
+
+    if (!res.ok) throw new Error(`HTTP ${res.status} fetching chapter list for ${mangaSlug}`);
+    return res.text();
+}
+
+/**
+ * Parse chapter list API response (HTML table)
+ * Each row: <tr> <a href="...">Chapter X</a> <time>...</time> </tr>
+ */
+function parseChapterListResponse(html) {
+    const $ = cheerio.load(html);
     const chapters = [];
-    $('ul.row-content-chapter li a, .chapter-list .row a, .listing-chapters_wrap a').each((_, el) => {
-        const $ch = $(el);
-        const title = $ch.attr('title') || $ch.text().trim();
-        const chapterRelUrl = $ch.attr('href') || '';
-        const number = parseChapterNumber($ch.text());
+
+    $('tbody tr').each((_, el) => {
+        const $row = $(el);
+        const $a = $row.find('a').first();
+        if (!$a.length) return;
+
+        const href = $a.attr('href') || '';
+        const name = $a.text().trim();
+        const number = parseChapterNumber(name);
+        const timeText = $row.find('time').text().trim();
 
         if (number !== null) {
             chapters.push({
                 number,
-                title,
-                url: buildFullUrl(chapterRelUrl),
+                title: name,
+                url: buildFullUrl(href),
+                created_at: timeText || null,
             });
         }
     });
 
-    return { name, description, otherNames, authors, categories, status, chapters };
+    return chapters;
+}
+
+/**
+ * Get full chapter list for a manga by its source URL
+ */
+async function getFullChapterList(mangaSourceUrl) {
+    const slug = extractSlugFromUrl(mangaSourceUrl);
+    if (!slug) throw new Error(`Cannot extract slug from: ${mangaSourceUrl}`);
+
+    const html = await fetchChapterList(slug);
+    return parseChapterListResponse(html);
 }
 
 /**
@@ -152,7 +178,10 @@ function buildFullUrl(relativePath) {
 module.exports = {
     BASE_URL,
     parseHomepage,
-    parseDetailPage,
+    parseChapterListResponse,
+    fetchChapterList,
+    getFullChapterList,
+    extractSlugFromUrl,
     parseChapterNumber,
     generateSlug,
     generateChapterSlug,
