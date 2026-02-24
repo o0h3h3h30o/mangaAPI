@@ -11,6 +11,16 @@ require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') }
 
 const { crawlChapterPages } = require('./crawler');
 
+async function flushApiCache() {
+    const port = process.env.PORT || 3000;
+    try {
+        const res = await fetch(`http://localhost:${port}/api/internal/cache-flush`, { method: 'POST' });
+        if (res.ok) console.log('[*] API cache flushed');
+    } catch {
+        console.log('[!] Could not flush API cache (server not running?)');
+    }
+}
+
 async function main() {
     const args = process.argv.slice(2);
 
@@ -27,7 +37,10 @@ async function main() {
     console.log('');
 
     try {
-        await crawlChapterPages({ limit, mangaId });
+        const results = await crawlChapterPages({ limit, mangaId });
+        if (results.success > 0) {
+            await flushApiCache();
+        }
     } catch (err) {
         console.error('Fatal error:', err);
         process.exit(1);

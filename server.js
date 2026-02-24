@@ -47,6 +47,13 @@ app.use('/api/bookmarks', bookmarkRoutes);
 app.use('/api/comments', commentRoutes);
 app.use('/api/admin', adminRoutes);
 
+// Internal: flush cache (called by crawler after crawl finishes)
+app.post('/api/internal/cache-flush', (req, res) => {
+    const { cacheFlush } = require('./config/cache');
+    cacheFlush();
+    res.json({ success: true, message: 'Cache flushed' });
+});
+
 // Root endpoint
 app.get('/', (req, res) => {
     res.json({

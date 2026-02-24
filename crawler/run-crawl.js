@@ -17,6 +17,16 @@ const { crawlSite, crawlAll } = require('./crawler');
 const { getAllParsers, getParserByName } = require('./parsers');
 const base = require('./parsers/base');
 
+async function flushApiCache() {
+    const port = process.env.PORT || 3000;
+    try {
+        const res = await fetch(`http://localhost:${port}/api/internal/cache-flush`, { method: 'POST' });
+        if (res.ok) console.log('[*] API cache flushed');
+    } catch {
+        console.log('[!] Could not flush API cache (server not running?)');
+    }
+}
+
 function parseArgs() {
     const args = process.argv.slice(2);
     const sourceIdx = args.indexOf('--source');
@@ -83,6 +93,7 @@ async function main() {
         } else {
             await crawlAll({ pages });
         }
+        await flushApiCache();
     } catch (err) {
         console.error('Fatal error:', err);
         process.exit(1);
