@@ -317,11 +317,12 @@ async function updateMangaDenormalized(mangaId) {
         return isNaN(ts) ? now : ts;
     };
 
+    const timeChap1 = toUnix(ch1.created_at);
     const updates = {
         chapter_1: ch1.number,
         chap_1_slug: ch1.slug,
-        time_chap_1: toUnix(ch1.created_at),
-        update_at: now,
+        time_chap_1: timeChap1,
+        update_at: timeChap1,
     };
 
     if (ch2) {
