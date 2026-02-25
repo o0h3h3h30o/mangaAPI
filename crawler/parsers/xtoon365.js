@@ -63,7 +63,7 @@ function parseHomepage(html) {
 
         const coverUrl = $item.find('img.lazy').attr('data-original') || '';
 
-        // Latest chapter text: "30화 - 최종화" → 30
+        // Latest chapter text: "30화 - 최종화", "특별 외전 6화 [최종화]"
         const chapterText = $item.find('small.text-black').first().text().trim();
         const chapterNum = parseKoreanChapterNumber(chapterText);
 
@@ -75,6 +75,7 @@ function parseHomepage(html) {
             coverUrl,
             chapters: chapterNum ? [{ number: chapterNum, url }] : [],
             latestChapterNum: chapterNum || 0,
+            latestChapterText: chapterText || '',
         });
     });
 
@@ -97,15 +98,15 @@ function parseHomepage(html) {
 function parseKoreanChapterNumber(text) {
     if (!text) return null;
 
+    // Side stories / specials → null (let gap numbering handle them)
+    // "특별 외전 5화", "만져도 돼? 외전 1화"
+    if (/외전|특별/.test(text)) return null;
+
     // Pattern 1: 숫자화 (most common) — "13화", "성인 독서회 34화"
     const hwMatch = text.match(/(\d+)\s*화/);
     if (hwMatch) return parseInt(hwMatch[1], 10);
 
-    // Pattern 2: 외전숫자 (side story) — "외전1", "외전 2"
-    const sideMatch = text.match(/외전\s*(\d+)/);
-    if (sideMatch) return parseFloat('0.' + sideMatch[1]);
-
-    // Pattern 3: leading number — "0056 - 후기", "0055 - 마지막화"
+    // Pattern 2: leading number — "0056 - 후기", "0055 - 마지막화"
     const leadMatch = text.match(/^(\d{2,})\s*[-–]/);
     if (leadMatch) return parseInt(leadMatch[1], 10);
 
@@ -203,15 +204,15 @@ function parseChapterList(html) {
     // Reverse to oldest-first for numbering gaps
     rawItems.reverse();
 
-    // Assign numbers to items that couldn't be parsed
+    // Assign numbers: if parsed number > lastNumber, use it;
+    // otherwise (null, duplicate, or backwards) → lastNumber + 0.5
     const chapters = [];
     let lastNumber = 0;
     for (const item of rawItems) {
-        if (item.number !== null) {
+        if (item.number !== null && item.number > lastNumber) {
             lastNumber = item.number;
             chapters.push({ ...item });
         } else {
-            // 특별편, 후기, etc. → lastNumber + 0.5
             const gapNumber = lastNumber + 0.5;
             lastNumber = gapNumber;
             chapters.push({ ...item, number: gapNumber });

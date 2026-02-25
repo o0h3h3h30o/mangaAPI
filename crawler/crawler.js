@@ -67,6 +67,29 @@ async function getExistingChapterNumbers(mangaId) {
     return new Set(rows.map(r => Number(r.num)));
 }
 
+/**
+ * Check if a chapter name already exists for a manga
+ */
+async function chapterNameExists(mangaId, chapterName) {
+    if (!chapterName) return false;
+    const [rows] = await db.query(
+        'SELECT id FROM chapter WHERE manga_id = ? AND name = ? LIMIT 1',
+        [mangaId, chapterName]
+    );
+    return rows.length > 0;
+}
+
+/**
+ * Get all existing chapter source_urls for a manga (as Set)
+ */
+async function getExistingChapterUrls(mangaId) {
+    const [rows] = await db.query(
+        'SELECT source_url FROM chapter WHERE manga_id = ? AND source_url IS NOT NULL AND source_url != ""',
+        [mangaId]
+    );
+    return new Set(rows.map(r => r.source_url));
+}
+
 // --------------- DB Writes ---------------
 
 /**
@@ -232,9 +255,14 @@ async function appendSourceUrl(mangaId, currentValue, newSourceUrl) {
 async function insertChapters(mangaId, chapters) {
     if (chapters.length === 0) return 0;
 
-    // Safety: filter out chapters whose number already exists in DB
+    // Safety: filter out chapters whose source_url or number already exists in DB
+    const existingUrls = await getExistingChapterUrls(mangaId);
     const existingNums = await getExistingChapterNumbers(mangaId);
-    const filtered = chapters.filter(ch => !existingNums.has(ch.number));
+    const filtered = chapters.filter(ch => {
+        if (ch.url && existingUrls.has(ch.url)) return false;
+        if (existingNums.has(ch.number)) return false;
+        return true;
+    });
     if (filtered.length === 0) {
         console.log(`  [=] All ${chapters.length} chapters already exist, nothing to insert`);
         return 0;
@@ -324,27 +352,28 @@ async function processManga(item) {
 
     if (manga) {
         // === EXISTING MANGA ===
-        const dbMax = parseFloat(manga.chapter_1) || 0;
-        console.log(`  [=] Found in DB: id=${manga.id}, slug=${manga.slug}, chapter_1=${dbMax}`);
+        console.log(`  [=] Found in DB: id=${manga.id}, slug=${manga.slug}, chapter_1=${manga.chapter_1}`);
 
-        if (item.latestChapterNum <= dbMax) {
-            console.log(`  [=] Up to date, skipping`);
-            return { status: 'skipped', name: item.name };
+        // Check if latest chapter from homepage already exists in DB (by name)
+        const latestText = item.latestChapterText || '';
+        if (latestText) {
+            const exists = await chapterNameExists(manga.id, latestText);
+            if (exists) {
+                console.log(`  [=] Latest chapter "${latestText}" already in DB, skipping`);
+                return { status: 'skipped', name: item.name };
+            }
+            console.log(`  [>] Chapter "${latestText}" not in DB, fetching detail...`);
         }
 
         // Fetch full chapter list via parser
         console.log(`  [>] Fetching full chapter list...`);
         const allChapters = await siteParser.getFullChapterList(sourceUrl);
 
-        // Keep only chapters newer than chapter_1 (the latest published)
-        const sorted = allChapters.sort((a, b) => b.number - a.number);
-        const newChapters = [];
-        for (const ch of sorted) {
-            if (ch.number <= dbMax) break;
-            newChapters.push(ch);
-        }
+        // Filter out chapters whose source_url already exists in DB
+        const existingUrls = await getExistingChapterUrls(manga.id);
+        const newChapters = allChapters.filter(ch => !existingUrls.has(ch.url));
 
-        console.log(`  [>] Found ${allChapters.length} total, ${newChapters.length} new (DB max: ${dbMax})`);
+        console.log(`  [>] Found ${allChapters.length} total, ${newChapters.length} new`);
 
         const inserted = await insertChapters(manga.id, newChapters);
         return { status: 'updated', name: item.name, inserted };
@@ -356,23 +385,18 @@ async function processManga(item) {
 
         if (manga) {
             // Name match → append source URL
-            const linkedMax = parseFloat(manga.chapter_1) || 0;
-            console.log(`  [~] Name match found: id=${manga.id}, "${manga.name}", chapter_1=${linkedMax}`);
+            console.log(`  [~] Name match found: id=${manga.id}, "${manga.name}", chapter_1=${manga.chapter_1}`);
             await appendSourceUrl(manga.id, manga.from_manga18fx, sourceUrl);
 
             // Fetch full chapter list via parser
             console.log(`  [>] Fetching full chapter list...`);
             const allChapters = await siteParser.getFullChapterList(sourceUrl);
 
-            // Keep only chapters newer than chapter_1
-            const sorted = allChapters.sort((a, b) => b.number - a.number);
-            const newChapters = [];
-            for (const ch of sorted) {
-                if (ch.number <= linkedMax) break;
-                newChapters.push(ch);
-            }
+            // Filter out chapters whose source_url already exists in DB
+            const existingUrls = await getExistingChapterUrls(manga.id);
+            const newChapters = allChapters.filter(ch => !existingUrls.has(ch.url));
 
-            console.log(`  [>] Found ${allChapters.length} total, ${newChapters.length} new (DB max: ${linkedMax})`);
+            console.log(`  [>] Found ${allChapters.length} total, ${newChapters.length} new`);
 
             const inserted = await insertChapters(manga.id, newChapters);
             return { status: 'linked', name: item.name, mangaId: manga.id, inserted };
