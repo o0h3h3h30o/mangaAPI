@@ -158,7 +158,7 @@ CREATE TABLE `manga` (
   `flag_chap_2` varchar(10) DEFAULT 'spain',
   PRIMARY KEY (`id`),
   KEY `manga_slug_index` (`slug`),
-  KEY `manga_status_id_foreign` (`status_id`),
+  KEY `manga_status_id_foreign` (`status_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=7399 DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
 
 DROP TABLE IF EXISTS `manga_tag`;
