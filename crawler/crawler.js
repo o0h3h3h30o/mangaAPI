@@ -337,25 +337,17 @@ async function updateMangaDenormalized(mangaId) {
 }
 
 /**
- * Sync manga updated_at / update_at from newest chapter's created_at
+ * Sync manga update_at from newest chapter's created_at
  * Used by xtoon365 so manga sort order matches chapter publish dates
  */
 async function syncMangaTimeFromChapter(mangaId) {
-    const [rows] = await db.query(
-        `SELECT created_at FROM chapter WHERE manga_id = ? ORDER BY number DESC LIMIT 1`,
-        [mangaId]
-    );
-    if (rows.length === 0) return;
-
-    const chapterDate = rows[0].created_at;
-    const ts = Math.floor(new Date(chapterDate).getTime() / 1000);
-    if (isNaN(ts)) return;
-
     await db.query(
-        `UPDATE manga SET created_at = ?, updated_at = ?, create_at = ?, update_at = ? WHERE id = ?`,
-        [chapterDate, chapterDate, ts, ts, mangaId]
+        `UPDATE manga SET update_at = (
+            SELECT UNIX_TIMESTAMP(MAX(created_at)) FROM chapter WHERE manga_id = ?
+        ) WHERE id = ?`,
+        [mangaId, mangaId]
     );
-    console.log(`  [~] Synced manga timestamps → ${chapterDate}`);
+    console.log(`  [~] Synced manga update_at from newest chapter`);
 }
 
 // --------------- Main Crawl Logic ---------------
