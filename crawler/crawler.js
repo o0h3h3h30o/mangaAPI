@@ -352,10 +352,10 @@ async function syncMangaTimeFromChapter(mangaId) {
     if (isNaN(ts)) return;
 
     await db.query(
-        `UPDATE manga SET updated_at = ?, update_at = ? WHERE id = ?`,
-        [chapterDate, ts, mangaId]
+        `UPDATE manga SET created_at = ?, updated_at = ?, create_at = ?, update_at = ? WHERE id = ?`,
+        [chapterDate, chapterDate, ts, ts, mangaId]
     );
-    console.log(`  [~] Synced manga update_at → ${chapterDate}`);
+    console.log(`  [~] Synced manga timestamps → ${chapterDate}`);
 }
 
 // --------------- Main Crawl Logic ---------------
