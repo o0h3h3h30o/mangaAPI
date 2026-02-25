@@ -336,6 +336,28 @@ async function updateMangaDenormalized(mangaId) {
     await db.query(`UPDATE manga SET ${sets} WHERE id = ?`, [...vals, mangaId]);
 }
 
+/**
+ * Sync manga updated_at / update_at from newest chapter's created_at
+ * Used by xtoon365 so manga sort order matches chapter publish dates
+ */
+async function syncMangaTimeFromChapter(mangaId) {
+    const [rows] = await db.query(
+        `SELECT created_at FROM chapter WHERE manga_id = ? ORDER BY number DESC LIMIT 1`,
+        [mangaId]
+    );
+    if (rows.length === 0) return;
+
+    const chapterDate = rows[0].created_at;
+    const ts = Math.floor(new Date(chapterDate).getTime() / 1000);
+    if (isNaN(ts)) return;
+
+    await db.query(
+        `UPDATE manga SET updated_at = ?, update_at = ? WHERE id = ?`,
+        [chapterDate, ts, mangaId]
+    );
+    console.log(`  [~] Synced manga update_at → ${chapterDate}`);
+}
+
 // --------------- Main Crawl Logic ---------------
 
 /**
@@ -376,6 +398,9 @@ async function processManga(item) {
         console.log(`  [>] Found ${allChapters.length} total, ${newChapters.length} new`);
 
         const inserted = await insertChapters(manga.id, newChapters);
+        if (inserted > 0 && siteParser.name === 'xtoon365') {
+            await syncMangaTimeFromChapter(manga.id);
+        }
         return { status: 'updated', name: item.name, inserted };
 
     } else {
@@ -399,6 +424,9 @@ async function processManga(item) {
             console.log(`  [>] Found ${allChapters.length} total, ${newChapters.length} new`);
 
             const inserted = await insertChapters(manga.id, newChapters);
+            if (inserted > 0 && siteParser.name === 'xtoon365') {
+                await syncMangaTimeFromChapter(manga.id);
+            }
             return { status: 'linked', name: item.name, mangaId: manga.id, inserted };
 
         } else {
@@ -436,6 +464,9 @@ async function processManga(item) {
             console.log(`  [>] Found ${allChapters.length} chapters`);
 
             const inserted = await insertChapters(mangaId, allChapters);
+            if (inserted > 0 && siteParser.name === 'xtoon365') {
+                await syncMangaTimeFromChapter(mangaId);
+            }
             return { status: 'created', name: item.name, mangaId, inserted };
         }
     }
