@@ -10,6 +10,7 @@
  *   node crawler/run-crawl.js --dry-run                    # Parse only, no DB writes
  *   node crawler/run-crawl.js --dry-run --pages 10         # Dry-run 10 pages
  *   node crawler/run-crawl.js --source xtoon365 --url https://t1.xtoon365.com/category/theme/302/finish/1  # Custom URL
+ *   node crawler/run-crawl.js --source xtoon365 --pages 5 --start-page 3  # Pages 3-7
  *   node crawler/run-crawl.js --list                       # List available parsers
  */
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
@@ -33,17 +34,19 @@ function parseArgs() {
     const sourceIdx = args.indexOf('--source');
     const pagesIdx = args.indexOf('--pages');
     const urlIdx = args.indexOf('--url');
+    const startPageIdx = args.indexOf('--start-page');
     return {
         isDryRun: args.includes('--dry-run'),
         isList: args.includes('--list'),
         sourceName: sourceIdx !== -1 ? args[sourceIdx + 1] : null,
         pages: pagesIdx !== -1 ? parseInt(args[pagesIdx + 1], 10) : undefined,
         url: urlIdx !== -1 ? args[urlIdx + 1] : undefined,
+        startPage: startPageIdx !== -1 ? parseInt(args[startPageIdx + 1], 10) : undefined,
     };
 }
 
 async function main() {
-    const { isDryRun, isList, sourceName, pages, url } = parseArgs();
+    const { isDryRun, isList, sourceName, pages, url, startPage } = parseArgs();
 
     // --list: show available parsers
     if (isList) {
@@ -65,7 +68,7 @@ async function main() {
             console.log(`=== DRY RUN: ${siteParser.name} (${siteParser.baseUrl}) ===\n`);
 
             const urls = siteParser.getHomepageUrls
-                ? siteParser.getHomepageUrls(pages, url)
+                ? siteParser.getHomepageUrls(pages, url, startPage)
                 : [siteParser.baseUrl];
 
             const items = [];
@@ -92,7 +95,7 @@ async function main() {
     // Normal crawl
     try {
         if (sourceName) {
-            await crawlSite(sourceName, { pages, url });
+            await crawlSite(sourceName, { pages, url, startPage });
         } else {
             await crawlAll({ pages });
         }

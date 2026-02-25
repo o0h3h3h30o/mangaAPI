@@ -27,24 +27,16 @@ function match(url) {
  *   --url https://t1.xtoon365.com/category/theme/302/finish/2   (completed)
  *   --url https://t1.xtoon365.com/category/theme/302             (all)
  *
- * Default: theme/302/finish/2 (completed)
+ * Default: theme/302 (all)
  */
-function getHomepageUrls(pages, customUrl) {
+function getHomepageUrls(pages, customUrl, startPage) {
     const count = pages || DEFAULT_PAGES;
+    const start = startPage || 1;
 
-    // Parse custom URL → strip trailing /page/N and query string
-    let basePath = '/category/theme/302/finish/2';
-    if (customUrl) {
-        try {
-            const u = new URL(customUrl);
-            basePath = u.pathname.replace(/\/page\/\d+\/?$/, '');
-        } catch {
-            basePath = customUrl.replace(/https?:\/\/[^/]+/, '').replace(/\/page\/\d+\/?$/, '');
-        }
-    }
+    let basePath = '/category/theme/302';
 
     const urls = [];
-    for (let page = 1; page <= count; page++) {
+    for (let page = start; page < start + count; page++) {
         urls.push(`${BASE_URL}${basePath}/page/${page}?ajax=1`);
     }
     return urls;

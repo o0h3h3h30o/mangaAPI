@@ -427,7 +427,7 @@ async function crawlSite(parserName, options = {}) {
 
     // Get URLs to crawl (paginated or single baseUrl)
     const urls = siteParser.getHomepageUrls
-        ? siteParser.getHomepageUrls(options.pages, options.url)
+        ? siteParser.getHomepageUrls(options.pages, options.url, options.startPage)
         : [siteParser.baseUrl];
 
     const items = [];
