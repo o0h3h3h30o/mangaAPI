@@ -10,7 +10,7 @@
  */
 
 const translate = require('google-translate-api-x');
-const db = require('./config/database');
+const db = require('../config/database');
 
 const args = process.argv.slice(2);
 const flags = {};

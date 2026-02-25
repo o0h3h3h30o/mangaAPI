@@ -6,7 +6,7 @@
  *   node crawler/run-sync-time.js
  */
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
-const db = require('./config/database');
+const db = require('../config/database');
 
 async function run() {
     const [result] = await db.query(`
