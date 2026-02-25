@@ -21,13 +21,31 @@ function match(url) {
 
 /**
  * Homepage URLs (ajax paginated)
- * theme/302 = 성인웹툰, finish/2 = completed
+ *
+ * Supports custom category URLs:
+ *   --url https://t1.xtoon365.com/category/theme/302/finish/1   (ongoing)
+ *   --url https://t1.xtoon365.com/category/theme/302/finish/2   (completed)
+ *   --url https://t1.xtoon365.com/category/theme/302             (all)
+ *
+ * Default: theme/302/finish/2 (completed)
  */
-function getHomepageUrls(pages) {
+function getHomepageUrls(pages, customUrl) {
     const count = pages || DEFAULT_PAGES;
+
+    // Parse custom URL → strip trailing /page/N and query string
+    let basePath = '/category/theme/302/finish/2';
+    if (customUrl) {
+        try {
+            const u = new URL(customUrl);
+            basePath = u.pathname.replace(/\/page\/\d+\/?$/, '');
+        } catch {
+            basePath = customUrl.replace(/https?:\/\/[^/]+/, '').replace(/\/page\/\d+\/?$/, '');
+        }
+    }
+
     const urls = [];
     for (let page = 1; page <= count; page++) {
-        urls.push(`${BASE_URL}/category/theme/302/finish/2/page/${page}?ajax=1`);
+        urls.push(`${BASE_URL}${basePath}/page/${page}?ajax=1`);
     }
     return urls;
 }
@@ -131,12 +149,15 @@ function extractMangaInfo(html) {
             : metaDesc.replace(/\s*-\s*Xtoon\s*$/i, '').trim();
     }
 
-    // Tags/genres
+    // Tags/genres — ".tags .show a" contains links like "#드라마", "#7" (day of week)
     const genres = [];
-    $('.tags a span').each((_, el) => {
+    $('.tags .show a').each((_, el) => {
         const genre = $(el).text().replace('#', '').trim();
         if (genre) genres.push(genre);
     });
+
+    // 19+ caution badge — <span> with "19" near title area
+    const caution = $('span').filter((_, el) => /19\+?/.test($(el).text().trim())).length > 0;
 
     // Status: check chapter list for 최종화/완결/마지막/END markers
     const allChapterText = $('.j-chapter-item strong').text();
@@ -152,6 +173,7 @@ function extractMangaInfo(html) {
         status,
         authors,
         description,
+        caution,
     };
 }
 

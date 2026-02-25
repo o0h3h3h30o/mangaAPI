@@ -139,24 +139,32 @@ async function findOrCreateTag(name) {
  * Insert new manga record with categories and authors
  */
 async function insertManga(data) {
-    const slug = base.generateSlug(data.slugName || data.name);
+    let slug = base.generateSlug(data.slugName || data.name);
     const statusId = mapStatusId(data.status);
 
     const [result] = await db.query(
-        `INSERT INTO manga (name, slug, summary, otherNames, from_manga18fx, status_id, is_public, created_at, updated_at, create_at, update_at)
-         VALUES (?, ?, ?, ?, ?, ?, 1, NOW(), NOW(), UNIX_TIMESTAMP(), UNIX_TIMESTAMP())`,
+        `INSERT INTO manga (name, slug, summary, otherNames, from_manga18fx, status_id, is_public, caution, created_at, updated_at, create_at, update_at)
+         VALUES (?, ?, ?, ?, ?, ?, 1, ?, NOW(), NOW(), UNIX_TIMESTAMP(), UNIX_TIMESTAMP())`,
         [
             data.name,
-            slug,
+            slug || '__temp__',
             data.description || '',
             data.otherNames || '',
             data.sourceUrl || '',
             statusId,
+            data.caution ? 1 : 0,
         ]
     );
 
     const mangaId = result.insertId;
-    console.log(`  [+] Inserted manga: "${data.name}" (id=${mangaId})`);
+
+    // If slug is empty (e.g. Korean/CJK name), use mangaId as slug
+    if (!slug) {
+        slug = String(mangaId);
+        await db.query('UPDATE manga SET slug = ? WHERE id = ?', [slug, mangaId]);
+    }
+
+    console.log(`  [+] Inserted manga: "${data.name}" (id=${mangaId}, slug=${slug})`);
 
     // Link categories
     if (Array.isArray(data.genres) && data.genres.length > 0) {
@@ -374,7 +382,7 @@ async function processManga(item) {
             console.log(`  [+] New manga, fetching detail...`);
             const detailHtml = await base.fetchPage(sourceUrl);
             const info = siteParser.extractMangaInfo(detailHtml);
-            console.log(`  [+] Parsed: "${info.name}", genres=[${info.genres.join(', ')}], status=${info.status}`);
+            console.log(`  [+] Parsed: "${info.name}", genres=[${info.genres.join(', ')}], status=${info.status}${info.caution ? ', 19+' : ''}`);
 
             const mangaId = await insertManga({
                 name: info.name || item.name,
@@ -384,6 +392,7 @@ async function processManga(item) {
                 authors: info.authors,
                 status: info.status,
                 genres: info.genres,
+                caution: info.caution || false,
                 sourceUrl: sourceUrl,
             });
 
@@ -418,7 +427,7 @@ async function crawlSite(parserName, options = {}) {
 
     // Get URLs to crawl (paginated or single baseUrl)
     const urls = siteParser.getHomepageUrls
-        ? siteParser.getHomepageUrls(options.pages)
+        ? siteParser.getHomepageUrls(options.pages, options.url)
         : [siteParser.baseUrl];
 
     const items = [];
@@ -466,6 +475,61 @@ async function crawlAll(options = {}) {
 }
 
 // --------------- Chapter Pages Crawl ---------------
+
+/**
+ * Download an image with Referer header, return Buffer
+ */
+async function downloadImage(imageUrl, referer) {
+    const { withProxy } = require('./proxy');
+    const res = await fetch(imageUrl, withProxy({
+        headers: {
+            'User-Agent': base.USER_AGENT,
+            'Referer': referer,
+        },
+    }));
+    if (!res.ok) throw new Error(`HTTP ${res.status} for ${imageUrl}`);
+    return Buffer.from(await res.arrayBuffer());
+}
+
+/**
+ * Download page images to local directory and insert into DB
+ * Downloads 5 images concurrently for speed
+ */
+async function downloadAndInsertPages(chapterId, imageUrls, referer, outputDir) {
+    const fs = require('fs');
+    const path = require('path');
+
+    if (imageUrls.length === 0) return 0;
+
+    const chapterDir = path.join(outputDir, String(chapterId));
+    fs.mkdirSync(chapterDir, { recursive: true });
+
+    // Prepare tasks
+    const tasks = imageUrls.map((url, i) => {
+        const slug = String(i + 1).padStart(3, '0');
+        const ext = (url.match(/\.(jpe?g|png|webp|gif)/i) || [, 'jpg'])[1];
+        const filename = `${slug}.${ext}`;
+        return { url, slug, filename, filepath: path.join(chapterDir, filename) };
+    });
+
+    // Download concurrently (10 at a time)
+    const CONCURRENCY = 10;
+    const values = new Array(tasks.length);
+    for (let i = 0; i < tasks.length; i += CONCURRENCY) {
+        const batch = tasks.slice(i, i + CONCURRENCY);
+        await Promise.all(batch.map(async (task, j) => {
+            const buffer = await downloadImage(task.url, referer);
+            fs.writeFileSync(task.filepath, buffer);
+            values[i + j] = [chapterId, task.slug, task.filename, 0];
+        }));
+    }
+
+    const [result] = await db.query(
+        'INSERT IGNORE INTO page (chapter_id, slug, image, external) VALUES ?',
+        [values]
+    );
+    return result.affectedRows;
+}
 
 /**
  * Insert page images as external URLs for a chapter
@@ -516,6 +580,8 @@ async function publishChapter(chapterId, mangaId) {
 async function crawlChapterPages(options = {}) {
     const limit = options.limit || 50;
     const mangaId = options.mangaId || null;
+    const orderBy = options.orderBy || 'c.manga_id ASC, c.number ASC';
+    const outputDir = options.outputDir || null; // local download path
 
     let query = `SELECT c.id, c.manga_id, c.name, c.number, c.source_url, m.name as manga_name
                  FROM chapter c
@@ -528,7 +594,7 @@ async function crawlChapterPages(options = {}) {
         params.push(mangaId);
     }
 
-    query += ' ORDER BY c.manga_id ASC, c.number ASC LIMIT ?';
+    query += ` ORDER BY ${orderBy} LIMIT ?`;
     params.push(limit);
 
     const [chapters] = await db.query(query, params);
@@ -571,9 +637,16 @@ async function crawlChapterPages(options = {}) {
                 continue;
             }
 
-            // Insert pages as external
-            const inserted = await insertExternalPages(ch.id, images);
-            console.log(`  [+] Inserted ${inserted} pages`);
+            // Download locally or store external URLs
+            let inserted;
+            if (outputDir) {
+                const referer = siteParser.baseUrl || new URL(ch.source_url).origin;
+                inserted = await downloadAndInsertPages(ch.id, images, referer, outputDir);
+                console.log(`  [+] Downloaded ${inserted} pages to ${outputDir}/${ch.id}/`);
+            } else {
+                inserted = await insertExternalPages(ch.id, images);
+                console.log(`  [+] Inserted ${inserted} external pages`);
+            }
 
             // Publish chapter (is_show = 1 + sync manga) and unlock
             await publishChapter(ch.id, ch.manga_id);

@@ -2,6 +2,7 @@
  * Shared utilities for all parsers
  */
 const { withProxy } = require('../proxy');
+const { slugify } = require('transliteration');
 
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
@@ -14,12 +15,7 @@ async function fetchPage(url) {
 }
 
 function generateSlug(name) {
-    return name
-        .toLowerCase()
-        .replace(/[^\w\s-]/g, '')
-        .replace(/\s+/g, '-')
-        .replace(/-+/g, '-')
-        .replace(/^-|-$/g, '');
+    return slugify(name, { lowercase: true, separator: '-' });
 }
 
 function generateChapterSlug(number) {

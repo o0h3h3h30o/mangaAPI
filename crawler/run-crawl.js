@@ -9,6 +9,7 @@
  *   node crawler/run-crawl.js --source jestful --pages 5   # Crawl one source, 5 pages
  *   node crawler/run-crawl.js --dry-run                    # Parse only, no DB writes
  *   node crawler/run-crawl.js --dry-run --pages 10         # Dry-run 10 pages
+ *   node crawler/run-crawl.js --source xtoon365 --url https://t1.xtoon365.com/category/theme/302/finish/1  # Custom URL
  *   node crawler/run-crawl.js --list                       # List available parsers
  */
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
@@ -31,16 +32,18 @@ function parseArgs() {
     const args = process.argv.slice(2);
     const sourceIdx = args.indexOf('--source');
     const pagesIdx = args.indexOf('--pages');
+    const urlIdx = args.indexOf('--url');
     return {
         isDryRun: args.includes('--dry-run'),
         isList: args.includes('--list'),
         sourceName: sourceIdx !== -1 ? args[sourceIdx + 1] : null,
         pages: pagesIdx !== -1 ? parseInt(args[pagesIdx + 1], 10) : undefined,
+        url: urlIdx !== -1 ? args[urlIdx + 1] : undefined,
     };
 }
 
 async function main() {
-    const { isDryRun, isList, sourceName, pages } = parseArgs();
+    const { isDryRun, isList, sourceName, pages, url } = parseArgs();
 
     // --list: show available parsers
     if (isList) {
@@ -62,7 +65,7 @@ async function main() {
             console.log(`=== DRY RUN: ${siteParser.name} (${siteParser.baseUrl}) ===\n`);
 
             const urls = siteParser.getHomepageUrls
-                ? siteParser.getHomepageUrls(pages)
+                ? siteParser.getHomepageUrls(pages, url)
                 : [siteParser.baseUrl];
 
             const items = [];
@@ -89,7 +92,7 @@ async function main() {
     // Normal crawl
     try {
         if (sourceName) {
-            await crawlSite(sourceName, { pages });
+            await crawlSite(sourceName, { pages, url });
         } else {
             await crawlAll({ pages });
         }
