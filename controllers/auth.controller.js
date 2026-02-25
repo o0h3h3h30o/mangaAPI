@@ -76,6 +76,13 @@ exports.login = async (req, res) => {
             });
         }
 
+        // Determine role from users_groups
+        const [roleRows] = await db.query(
+            "SELECT g.name FROM users_groups ug JOIN `groups` g ON g.id = ug.group_id WHERE ug.user_id = ? AND g.name = 'admin' LIMIT 1",
+            [user.id]
+        );
+        user.role = roleRows.length > 0 ? 'admin' : 'user';
+
         // Update last_login
         await db.query('UPDATE users SET last_login = NOW() WHERE id = ?', [user.id]);
 

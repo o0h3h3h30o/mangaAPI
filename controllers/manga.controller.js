@@ -462,7 +462,7 @@ exports.getMangaBySlug = async (req, res) => {
                 `SELECT id, name, slug, view, created_at, number
                 FROM chapter
                 WHERE manga_id = ? AND is_show = 1
-                ORDER BY CAST(number AS DECIMAL(10,2)) ASC
+                ORDER BY number ASC
                 LIMIT 1`,
                 [m.id]
             ).catch(() => [[]]),
@@ -501,7 +501,7 @@ exports.getMangaBySlug = async (req, res) => {
                 name: ch.name || `第${ch.number}話`,
                 slug: ch.slug || `chapter-${ch.number}`,
                 views: ch.view || 0,
-                order: parseInt(ch.number) || 1,
+                order: ch.number || 1,
                 created_at: safeISO(ch.created_at),
             };
         }
@@ -721,7 +721,7 @@ exports.getChaptersByManga = async (req, res) => {
                 `SELECT id, name, slug, number, view, created_at, updated_at
                 FROM chapter
                 WHERE manga_id = ? AND is_show = 1
-                ORDER BY CAST(number AS DECIMAL(10,2)) ${sort}
+                ORDER BY number ${sort}
                 LIMIT ?, ?`,
                 [mangaId, offset, perPage]
             );
@@ -738,8 +738,8 @@ exports.getChaptersByManga = async (req, res) => {
                 name: ch.name || `第${ch.number}話`,
                 slug: ch.slug || `chapter-${ch.number}`,
                 views: ch.view || 0,
-                order: parseInt(ch.number) || 0,
-                chapter_number: parseFloat(ch.number) || 0,
+                order: ch.number || 0,
+                chapter_number: ch.number || 0,
                 created_at: safeISO(ch.created_at),
                 updated_at: safeISO(ch.updated_at),
             }));

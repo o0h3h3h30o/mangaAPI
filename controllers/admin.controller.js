@@ -310,7 +310,7 @@ exports.listChapters = async (req, res) => {
         const { id } = req.params;
         const [rows] = await db.query(
             `SELECT c.id, c.name, c.slug, c.number, c.view, c.is_show, c.source_url, c.is_crawling, c.created_at
-             FROM chapter c WHERE c.manga_id = ? ORDER BY CAST(c.number AS DECIMAL(10,2)) ASC, c.id ASC`,
+             FROM chapter c WHERE c.manga_id = ? ORDER BY c.number ASC, c.id ASC`,
             [id]
         );
         res.json({ success: true, data: rows });
@@ -559,7 +559,7 @@ async function syncMangaLatestChapter(mangaId) {
     const [rows] = await db.query(
         `SELECT number, slug, created_at FROM chapter
          WHERE manga_id = ? AND is_show = 1
-         ORDER BY CAST(number AS DECIMAL(10,2)) DESC, id DESC LIMIT 1`,
+         ORDER BY number DESC, id DESC LIMIT 1`,
         [mangaId]
     );
     if (rows.length > 0) {

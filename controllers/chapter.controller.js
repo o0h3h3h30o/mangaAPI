@@ -39,8 +39,8 @@ exports.getChapterDetail = async (req, res) => {
             name: ch.name || `第${ch.number}話`,
             slug: ch.slug,
             views: ch.view || 0,
-            order: parseInt(ch.number) || 0,
-            chapter_number: parseFloat(ch.number) || 0,
+            order: ch.number || 0,
+            chapter_number: ch.number || 0,
             created_at: (() => { const dt = new Date(ch.created_at); return (!ch.created_at || isNaN(dt.getTime())) ? new Date().toISOString() : dt.toISOString(); })(),
             updated_at: (() => { const dt = new Date(ch.updated_at); return (!ch.updated_at || isNaN(dt.getTime())) ? new Date().toISOString() : dt.toISOString(); })(),
             content: [], // images loaded separately via getImages
@@ -92,12 +92,15 @@ exports.getChapterImages = async (req, res) => {
 
         // Get pages (images) for this chapter, grouped by slug to avoid duplicates from re-crawling
         const [pages] = await db.query(
-            'SELECT MIN(id) as id, slug, image, external FROM page WHERE chapter_id = ? GROUP BY slug ORDER BY CAST(slug AS UNSIGNED) ASC',
+            'SELECT MIN(id) as id, slug, image, external, image_local FROM page WHERE chapter_id = ? GROUP BY slug ORDER BY CAST(slug AS UNSIGNED) ASC',
             [ch.id]
         );
 
-        // Build image URLs
+        // Build image URLs: S3 (image_local) > external URL > local file
         const images = pages.map(p => {
+            if (p.image_local) {
+                return `${process.env.S3_PAGE_CDN_URL}/mangaraw4u/chapter/${ch.id}/${p.image_local}`;
+            }
             if (p.external === 1) {
                 return p.image;
             }
@@ -112,7 +115,7 @@ exports.getChapterImages = async (req, res) => {
                 name: ch.name || `第${ch.number}話`,
                 slug: ch.slug,
                 views: ch.view || 0,
-                order: parseInt(ch.number) || 0,
+                order: ch.number || 0,
                 created_at: (() => { const dt = new Date(ch.created_at); return (!ch.created_at || isNaN(dt.getTime())) ? new Date().toISOString() : dt.toISOString(); })(),
                 manga: {
                     id: manga.id,

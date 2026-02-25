@@ -50,7 +50,7 @@ async function findMangaByName(name) {
  */
 async function getMaxChapterNumber(mangaId) {
     const [rows] = await db.query(
-        'SELECT MAX(CAST(number AS DECIMAL(10,2))) as maxNum FROM chapter WHERE manga_id = ?',
+        'SELECT MAX(number) as maxNum FROM chapter WHERE manga_id = ?',
         [mangaId]
     );
     return rows[0]?.maxNum || 0;
@@ -61,10 +61,10 @@ async function getMaxChapterNumber(mangaId) {
  */
 async function getExistingChapterNumbers(mangaId) {
     const [rows] = await db.query(
-        'SELECT CAST(number AS DECIMAL(10,2)) as num FROM chapter WHERE manga_id = ?',
+        'SELECT number as num FROM chapter WHERE manga_id = ?',
         [mangaId]
     );
-    return new Set(rows.map(r => parseFloat(r.num)));
+    return new Set(rows.map(r => Number(r.num)));
 }
 
 // --------------- DB Writes ---------------
@@ -266,7 +266,7 @@ async function updateMangaDenormalized(mangaId) {
     const [rows] = await db.query(
         `SELECT number, slug, name, created_at FROM chapter
          WHERE manga_id = ? AND is_show = 1
-         ORDER BY CAST(number AS DECIMAL(10,2)) DESC, id DESC LIMIT 2`,
+         ORDER BY number DESC, id DESC LIMIT 2`,
         [mangaId]
     );
 
