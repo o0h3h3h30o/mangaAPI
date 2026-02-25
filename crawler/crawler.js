@@ -649,8 +649,9 @@ async function crawlChapterPages(options = {}) {
     console.log(`Found ${chapters.length} unpublished chapters to crawl\n`);
 
     const results = { success: 0, failed: 0, skipped: 0 };
+    const CHAPTER_CONCURRENCY = 5;
 
-    for (const ch of chapters) {
+    async function processOneChapter(ch) {
         try {
             // Double-check: re-select to see if another process grabbed it
             const [[fresh]] = await db.query(
@@ -659,7 +660,7 @@ async function crawlChapterPages(options = {}) {
             if (!fresh || fresh.is_crawling === 1 || fresh.is_show === 1) {
                 console.log(`  [=] Ch.${ch.number} (id=${ch.id}): already being crawled or published, skipping`);
                 results.skipped++;
-                continue;
+                return;
             }
 
             // Lock: set is_crawling = 1
@@ -672,7 +673,7 @@ async function crawlChapterPages(options = {}) {
                 console.log(`  [!] ${ch.manga_name} Ch.${ch.number}: parser "${siteParser.name}" has no getPageImages, skipping`);
                 await db.query('UPDATE chapter SET is_crawling = 0 WHERE id = ?', [ch.id]);
                 results.failed++;
-                continue;
+                return;
             }
 
             console.log(`[*] ${ch.manga_name} — Ch.${ch.number} (id=${ch.id})`);
@@ -682,7 +683,7 @@ async function crawlChapterPages(options = {}) {
             if (images.length === 0) {
                 console.log(`  [!] No images found, marking as failed`);
                 results.failed++;
-                continue;
+                return;
             }
 
             // Download locally or store external URLs
@@ -707,6 +708,12 @@ async function crawlChapterPages(options = {}) {
             // Keep is_crawling = 1 so it won't be retried (source page likely gone)
             results.failed++;
         }
+    }
+
+    // Process chapters in batches of CHAPTER_CONCURRENCY
+    for (let i = 0; i < chapters.length; i += CHAPTER_CONCURRENCY) {
+        const batch = chapters.slice(i, i + CHAPTER_CONCURRENCY);
+        await Promise.all(batch.map(ch => processOneChapter(ch)));
     }
 
     console.log(`\n=== Chapter Pages Summary ===`);
