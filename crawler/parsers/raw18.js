@@ -123,10 +123,11 @@ function extractMangaInfo(html) {
     // Title
     const mangaName = $('h1').first().text().trim();
 
-    // Cover: prefer data-original, fallback src
-    const $coverImg = $('img[data-original*="admin.raw18"]').first()
-        || $('img[src*="admin.raw18"]').first();
-    const coverUrl = ($coverImg.attr('data-original') || $coverImg.attr('src') || '').trim();
+    // Cover: main cover uses src (not lazy-loaded), inside div.detail-info or div.col-image.
+    // Sidebar/recommendations use data-original (lazy) → must NOT use those.
+    const coverUrl = ($('div.detail-info img[src*="admin.raw18"]').first().attr('src')
+        || $('div.col-image img[src]').first().attr('src')
+        || $('img[src*="admin.raw18"]').first().attr('src') || '').trim();
 
     // SlugName from cover URL
     const slugFromCover = coverUrl.match(/storage\/images\/([^\/]+)\//);
