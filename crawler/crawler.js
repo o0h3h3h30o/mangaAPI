@@ -93,6 +93,15 @@ async function getExistingChapterUrls(mangaId) {
 // --------------- DB Writes ---------------
 
 /**
+ * Strip 4-byte Unicode characters (emoji, etc.) that MySQL utf8 (3-byte) rejects.
+ * Use utf8mb4 on the DB column to avoid this, or call this before inserting.
+ */
+function stripEmoji(str) {
+    if (!str) return str;
+    return str.replace(/[\u{10000}-\u{10FFFF}]/gu, '');
+}
+
+/**
  * Map status text → status_id (1=ongoing, 2=completed)
  */
 function mapStatusId(status) {
@@ -169,10 +178,10 @@ async function insertManga(data) {
         `INSERT INTO manga (name, slug, summary, otherNames, from_manga18fx, status_id, is_public, caution, created_at, updated_at, create_at, update_at)
          VALUES (?, ?, ?, ?, ?, ?, 1, ?, NOW(), NOW(), UNIX_TIMESTAMP(), UNIX_TIMESTAMP())`,
         [
-            data.name,
+            stripEmoji(data.name),
             slug || '__temp__',
-            data.description || '',
-            data.otherNames || '',
+            stripEmoji(data.description || ''),
+            stripEmoji(data.otherNames || ''),
             data.sourceUrl || '',
             statusId,
             data.caution ? 1 : 0,
