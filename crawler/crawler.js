@@ -271,16 +271,30 @@ async function insertChapters(mangaId, chapters) {
         console.log(`  [~] Filtered out ${chapters.length - filtered.length} duplicate chapters`);
     }
 
-    const values = filtered.map(ch => [
-        mangaId,
-        ch.title || `第${ch.number}話`,
-        base.generateChapterSlug(ch.number),
-        ch.number,
-        0,  // is_show = 0
-        ch.url || '',
-        ch.created_at || new Date().toISOString(),
-        ch.created_at || new Date().toISOString(),
-    ]);
+    // Append current time (HH:MM:SS) to date-only strings like "2026-01-01"
+    const appendCurrentTime = (dateStr) => {
+        if (!dateStr) return new Date().toISOString();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+            const now = new Date();
+            const time = now.toTimeString().slice(0, 8); // "12:39:00"
+            return `${dateStr} ${time}`;
+        }
+        return dateStr;
+    };
+
+    const values = filtered.map(ch => {
+        const ts = appendCurrentTime(ch.created_at);
+        return [
+            mangaId,
+            ch.title || `第${ch.number}話`,
+            base.generateChapterSlug(ch.number),
+            ch.number,
+            0,  // is_show = 0
+            ch.url || '',
+            ts,
+            ts,
+        ];
+    });
 
     const placeholders = values.map(() => '(?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
     const flat = values.flat();
