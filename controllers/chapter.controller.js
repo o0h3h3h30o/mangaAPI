@@ -96,11 +96,9 @@ exports.getChapterImages = async (req, res) => {
             [ch.id]
         );
 
-        // Build image URLs: S3 (image_local) > external URL > local file
+        // Build image URLs: external URL or local file
+        // TODO: khi setup R2/storage xong, bật lại image_local check
         const images = pages.map(p => {
-            if (p.image_local) {
-                return `${process.env.S3_PAGE_CDN_URL}/mangaraw4u/chapter/${ch.id}/${p.image_local}`;
-            }
             if (p.external === 1) {
                 return p.image;
             }

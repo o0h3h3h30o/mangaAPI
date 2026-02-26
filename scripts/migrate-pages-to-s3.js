@@ -12,6 +12,7 @@
  *   node scripts/migrate-pages-to-s3.js --limit 10000      # First 10K pages
  *   node scripts/migrate-pages-to-s3.js --chapter-id 123   # One chapter
  *   node scripts/migrate-pages-to-s3.js --concurrency 200  # Custom concurrency
+ *   node scripts/migrate-pages-to-s3.js --direction desc   # Newest first (run 2 processes: asc + desc)
  */
 require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
 
@@ -30,12 +31,14 @@ function parseArgs() {
     const limitIdx = args.indexOf('--limit');
     const chapterIdx = args.indexOf('--chapter-id');
     const concIdx = args.indexOf('--concurrency');
+    const dirIdx = args.indexOf('--direction');
     return {
         force: args.includes('--force'),
         verify: args.includes('--verify'),
         limit: limitIdx !== -1 ? parseInt(args[limitIdx + 1], 10) : null,
         chapterId: chapterIdx !== -1 ? parseInt(args[chapterIdx + 1], 10) : null,
         concurrency: concIdx !== -1 ? parseInt(args[concIdx + 1], 10) : DEFAULT_CONCURRENCY,
+        direction: dirIdx !== -1 && args[dirIdx + 1] === 'desc' ? 'desc' : 'asc',
     };
 }
 
@@ -62,7 +65,7 @@ function getExtension(url) {
 
 function getS3Key(page) {
     const filename = page.slug + getExtension(page.image);
-    return { filename, s3Key: `mangaraw4u/chapter/${page.chapter_id}/${filename}` };
+    return { filename, s3Key: `chapter/${page.chapter_id}/${filename}` };
 }
 
 async function processPage(page) {
@@ -201,12 +204,14 @@ async function runVerifyMode({ limit, chapterId, concurrency }) {
 }
 
 // ==================== NORMAL/FORCE MODE ====================
-async function runMigrateMode({ force, limit, chapterId, concurrency }) {
+async function runMigrateMode({ force, limit, chapterId, concurrency, direction }) {
+    const isDesc = direction === 'desc';
     const { where, params: countParams } = buildWhereClause(force, chapterId);
     const [[{ cnt: totalRemaining }]] = await db.query(
         `SELECT COUNT(*) as cnt FROM page WHERE ${where}`, countParams
     );
     console.log(`Pages to process: ${totalRemaining.toLocaleString()}`);
+    console.log(`Direction: ${isDesc ? 'DESC (newest first)' : 'ASC (oldest first)'}`);
 
     const totalToProcess = limit ? Math.min(limit, totalRemaining) : totalRemaining;
     console.log(`Will process: ${totalToProcess.toLocaleString()}\n`);
@@ -219,14 +224,16 @@ async function runMigrateMode({ force, limit, chapterId, concurrency }) {
     let processed = 0;
     let totalSuccess = 0;
     let totalFailed = 0;
-    let lastId = 0;
+    let lastId = isDesc ? Number.MAX_SAFE_INTEGER : 0;
     const startTime = Date.now();
     const allErrors = [];
 
     while (processed < totalToProcess) {
         const batchLimit = Math.min(BATCH_SIZE, totalToProcess - processed);
         const { where: batchWhere, params: batchParams } = buildWhereClause(force, chapterId);
-        const sql = `SELECT id, slug, image, chapter_id FROM page WHERE ${batchWhere} AND id > ? ORDER BY id ASC LIMIT ?`;
+        const idOp = isDesc ? '<' : '>';
+        const orderDir = isDesc ? 'DESC' : 'ASC';
+        const sql = `SELECT id, slug, image, chapter_id FROM page WHERE ${batchWhere} AND id ${idOp} ? ORDER BY id ${orderDir} LIMIT ?`;
         batchParams.push(lastId, batchLimit);
 
         const [pages] = await db.query(sql, batchParams);
@@ -274,6 +281,7 @@ async function main() {
     const mode = opts.verify ? 'VERIFY (check S3, upload missing)' :
                  opts.force ? 'FORCE (re-upload all)' : 'incremental (unmigrated only)';
     console.log(`Mode: ${mode}`);
+    console.log(`Direction: ${opts.direction.toUpperCase()}`);
     console.log(`Concurrency: ${opts.concurrency}`);
     if (opts.limit) console.log(`Limit: ${opts.limit}`);
     if (opts.chapterId) console.log(`Chapter ID: ${opts.chapterId}`);
