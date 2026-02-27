@@ -96,9 +96,12 @@ exports.getChapterImages = async (req, res) => {
             [ch.id]
         );
 
-        // Build image URLs: external URL or local file
-        // TODO: khi setup R2/storage xong, bật lại image_local check
+        // Build image URLs: S3 → local CDN → external fallback
+        const s3Base = process.env.S3_PUBLIC_URL;
         const images = pages.map(p => {
+            if (p.image_local && s3Base) {
+                return `${s3Base}/chapter/${ch.id}/${p.image_local}`;
+            }
             if (p.external === 1) {
                 return p.image;
             }
