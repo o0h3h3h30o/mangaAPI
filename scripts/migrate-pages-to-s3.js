@@ -42,15 +42,11 @@ function parseArgs() {
     };
 }
 
-function getReferer(url) {
-    try { return new URL(url).origin; } catch { return ''; }
-}
-
-async function downloadImage(url) {
+async function downloadImage(url, referer) {
     const res = await fetch(url, withProxy({
         headers: {
             'User-Agent': USER_AGENT,
-            'Referer': getReferer(url),
+            'Referer': referer || '',
         },
         signal: AbortSignal.timeout(30000),
     }));
@@ -77,10 +73,12 @@ function getS3Key(page) {
 
 async function processPage(page) {
     const { filename, s3Key } = getS3Key(page);
+    // Referer = source site origin (e.g. https://t1.xtoon365.com)
+    const referer = page.source_origin || '';
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         try {
-            const buffer = await downloadImage(page.image);
+            const buffer = await downloadImage(page.image, referer);
             await uploadToS3(s3Key, buffer, getContentType(page.image));
             await db.query('UPDATE page SET image_local = ? WHERE id = ?', [filename, page.id]);
             return true;
@@ -126,13 +124,13 @@ function runPool(items, concurrency, handler) {
 }
 
 function buildWhereClause(force, chapterId) {
-    const conditions = ['external = 1'];
+    const conditions = ['p.external = 1'];
     const params = [];
     if (!force) {
-        conditions.push("(image_local IS NULL OR image_local = '')");
+        conditions.push("(p.image_local IS NULL OR p.image_local = '')");
     }
     if (chapterId) {
-        conditions.push('chapter_id = ?');
+        conditions.push('p.chapter_id = ?');
         params.push(chapterId);
     }
     return { where: conditions.join(' AND '), params };
@@ -215,7 +213,7 @@ async function runMigrateMode({ force, limit, chapterId, concurrency, direction 
     const isDesc = direction === 'desc';
     const { where, params: countParams } = buildWhereClause(force, chapterId);
     const [[{ cnt: totalRemaining }]] = await db.query(
-        `SELECT COUNT(*) as cnt FROM page WHERE ${where}`, countParams
+        `SELECT COUNT(*) as cnt FROM page p WHERE ${where}`, countParams
     );
     console.log(`Pages to process: ${totalRemaining.toLocaleString()}`);
     console.log(`Direction: ${isDesc ? 'DESC (newest first)' : 'ASC (oldest first)'}`);
@@ -240,7 +238,7 @@ async function runMigrateMode({ force, limit, chapterId, concurrency, direction 
         const { where: batchWhere, params: batchParams } = buildWhereClause(force, chapterId);
         const idOp = isDesc ? '<' : '>';
         const orderDir = isDesc ? 'DESC' : 'ASC';
-        const sql = `SELECT id, slug, image, chapter_id FROM page WHERE ${batchWhere} AND id ${idOp} ? ORDER BY id ${orderDir} LIMIT ?`;
+        const sql = `SELECT p.id, p.slug, p.image, p.chapter_id, SUBSTRING_INDEX(c.source_url, '/', 3) as source_origin FROM page p JOIN chapter c ON p.chapter_id = c.id WHERE ${batchWhere} AND p.id ${idOp} ? ORDER BY p.id ${orderDir} LIMIT ?`;
         batchParams.push(lastId, batchLimit);
 
         const [pages] = await db.query(sql, batchParams);
