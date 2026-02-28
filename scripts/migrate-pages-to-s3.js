@@ -42,9 +42,16 @@ function parseArgs() {
     };
 }
 
+function getReferer(url) {
+    try { return new URL(url).origin; } catch { return ''; }
+}
+
 async function downloadImage(url) {
     const res = await fetch(url, withProxy({
-        headers: { 'User-Agent': USER_AGENT },
+        headers: {
+            'User-Agent': USER_AGENT,
+            'Referer': getReferer(url),
+        },
         signal: AbortSignal.timeout(30000),
     }));
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
