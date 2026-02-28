@@ -43,15 +43,30 @@ function parseArgs() {
 }
 
 async function downloadImage(url, referer) {
+    const headers = {
+        'User-Agent': USER_AGENT,
+        'Referer': referer || '',
+    };
+
+    // Try with proxy first
     const res = await fetch(url, withProxy({
-        headers: {
-            'User-Agent': USER_AGENT,
-            'Referer': referer || '',
-        },
+        headers,
         signal: AbortSignal.timeout(30000),
     }));
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return Buffer.from(await res.arrayBuffer());
+
+    if (res.ok) return Buffer.from(await res.arrayBuffer());
+
+    // Proxy might be blocked → retry direct (no proxy)
+    if (res.status === 403 || res.status === 404) {
+        const directRes = await fetch(url, {
+            headers,
+            signal: AbortSignal.timeout(30000),
+        });
+        if (directRes.ok) return Buffer.from(await directRes.arrayBuffer());
+        throw new Error(`HTTP ${directRes.status} (direct)`);
+    }
+
+    throw new Error(`HTTP ${res.status}`);
 }
 
 function getContentType(url) {
@@ -83,6 +98,11 @@ async function processPage(page) {
             await db.query('UPDATE page SET image_local = ? WHERE id = ?', [filename, page.id]);
             return true;
         } catch (err) {
+            // 404 = image gone from CDN → mark as _404 so we skip it next time
+            if (err.message.includes('404')) {
+                await db.query("UPDATE page SET image_local = '_404' WHERE id = ?", [page.id]);
+                return '_404';
+            }
             if (attempt === MAX_RETRIES) throw err;
             await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
         }
@@ -105,6 +125,7 @@ function runPool(items, concurrency, handler) {
                 handler(item)
                     .then((result) => {
                         if (result === 'skipped') skipped++;
+                        else if (result === '_404') skipped++;
                         else success++;
                     })
                     .catch((err) => {

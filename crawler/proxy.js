@@ -23,12 +23,23 @@ const PROXY_IPS = [
     '109.111.36.108',
     '109.111.37.190',
     '200.234.138.192',
-    '151.245.245.195',
-    '62.192.172.221',
 ];
 
+// Shuffle array (Fisher-Yates) to avoid always hitting the same proxy
+function shuffle(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+}
+
+// Round-robin index — cycles through shuffled list so each request uses a different proxy
+let proxyPool = shuffle([...PROXY_IPS]);
+let poolIdx = 0;
+
 /**
- * Get a random proxy dispatcher (undici ProxyAgent)
+ * Get next proxy dispatcher (round-robin through shuffled list)
  * Returns null if proxy is not configured
  */
 function getRandomProxy() {
@@ -38,7 +49,13 @@ function getRandomProxy() {
 
     if (!user || !pass) return null;
 
-    const ip = PROXY_IPS[Math.floor(Math.random() * PROXY_IPS.length)];
+    // Re-shuffle when we've used all proxies
+    if (poolIdx >= proxyPool.length) {
+        proxyPool = shuffle([...PROXY_IPS]);
+        poolIdx = 0;
+    }
+
+    const ip = proxyPool[poolIdx++];
     const proxyUrl = `http://${user}:${pass}@${ip}:${port}`;
 
     return new ProxyAgent(proxyUrl);
