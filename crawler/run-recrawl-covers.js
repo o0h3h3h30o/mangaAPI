@@ -76,13 +76,13 @@ function coverExists(id) {
     return fs.existsSync(full) && fs.existsSync(thumb);
 }
 
-async function downloadToBuffer(url, retries = 3) {
+async function downloadToBuffer(url, referer, retries = 3) {
     let lastErr;
     for (let i = 0; i < retries; i++) {
         try {
-            const res = await fetch(url, withProxy({
-                headers: { 'User-Agent': USER_AGENT },
-            }));
+            const headers = { 'User-Agent': USER_AGENT };
+            if (referer) headers['Referer'] = referer;
+            const res = await fetch(url, withProxy({ headers }));
             if (res.ok) return Buffer.from(await res.arrayBuffer());
             if (res.status === 403 || res.status === 429 || res.status >= 500) {
                 lastErr = new Error(`HTTP ${res.status}`);
@@ -193,7 +193,8 @@ async function main() {
             }
 
             console.log(`  [>] Cover: ${coverUrl}`);
-            const buffer = await downloadToBuffer(coverUrl);
+            const referer = new URL(xtoonUrl).origin;
+            const buffer = await downloadToBuffer(coverUrl, referer);
             await saveCover(buffer, manga.id);
             results.success++;
         } catch (err) {
