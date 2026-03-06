@@ -23,6 +23,8 @@ const PROXY_IPS = [
     '109.111.36.108',
     '109.111.37.190',
     '200.234.138.192',
+    '151.245.245.195',
+    '62.192.172.221',
 ];
 
 // Shuffle array (Fisher-Yates) to avoid always hitting the same proxy
