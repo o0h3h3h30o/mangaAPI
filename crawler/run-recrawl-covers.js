@@ -79,10 +79,13 @@ function coverExists(id) {
 async function downloadToBuffer(url, referer, retries = 3) {
     let lastErr;
     for (let i = 0; i < retries; i++) {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 15000);
         try {
             const headers = { 'User-Agent': USER_AGENT };
             if (referer) headers['Referer'] = referer;
-            const res = await fetch(url, withProxy({ headers }));
+            const res = await fetch(url, withProxy({ headers, signal: ctrl.signal }));
+            clearTimeout(timer);
             if (res.ok) return Buffer.from(await res.arrayBuffer());
             if (res.status === 403 || res.status === 429 || res.status >= 500) {
                 lastErr = new Error(`HTTP ${res.status}`);
@@ -91,7 +94,8 @@ async function downloadToBuffer(url, referer, retries = 3) {
             }
             throw new Error(`HTTP ${res.status} for ${url}`);
         } catch (err) {
-            lastErr = err;
+            clearTimeout(timer);
+            lastErr = err.name === 'AbortError' ? new Error('Timeout 15s') : err;
             if (i < retries - 1) await sleep(1000 * (i + 1));
         }
     }
@@ -127,10 +131,14 @@ function extractXtoonUrl(fromManga18fx) {
 async function fetchCoverUrl(xtoonUrl, retries = 3) {
     let lastErr;
     for (let i = 0; i < retries; i++) {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 15000);
         try {
             const res = await fetch(xtoonUrl, withProxy({
                 headers: { 'User-Agent': USER_AGENT },
+                signal: ctrl.signal,
             }));
+            clearTimeout(timer);
             if (res.ok) {
                 const html = await res.text();
                 const $ = cheerio.load(html);
@@ -144,7 +152,8 @@ async function fetchCoverUrl(xtoonUrl, retries = 3) {
             }
             throw new Error(`HTTP ${res.status}`);
         } catch (err) {
-            lastErr = err;
+            clearTimeout(timer);
+            lastErr = err.name === 'AbortError' ? new Error('Timeout 15s') : err;
             if (i < retries - 1) await sleep(1000 * (i + 1));
         }
     }
