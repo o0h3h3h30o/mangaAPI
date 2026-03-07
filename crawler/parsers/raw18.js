@@ -251,9 +251,20 @@ async function getPageImages(chapterUrl) {
 // --------------- Internal Helpers ---------------
 
 /**
+ * Normalize URL: replace old domain with current BASE_URL
+ * raw18.info → raw18.link (transparent to DB stored URLs)
+ */
+function normalizeUrl(url) {
+    if (!url) return url;
+    return url.replace(/https?:\/\/(?:www\.)?raw18\.info/, BASE_URL);
+}
+
+/**
  * Fetch a page with proper Referer + User-Agent headers (+ proxy rotation)
  */
 async function fetchWithReferer(url, referer) {
+    url = normalizeUrl(url);
+    referer = normalizeUrl(referer);
     const res = await fetch(url, withProxy({
         headers: {
             'User-Agent': USER_AGENT,
