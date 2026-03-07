@@ -21,10 +21,10 @@ const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
 /**
  * Download image URL → Buffer
  */
-async function downloadToBuffer(url) {
-    const res = await fetch(url, withProxy({
-        headers: { 'User-Agent': USER_AGENT },
-    }));
+async function downloadToBuffer(url, referer) {
+    const headers = { 'User-Agent': USER_AGENT };
+    if (referer) headers['Referer'] = referer;
+    const res = await fetch(url, withProxy({ headers }));
     if (!res.ok) throw new Error(`HTTP ${res.status} downloading ${url}`);
     return Buffer.from(await res.arrayBuffer());
 }
@@ -58,8 +58,8 @@ async function processAndSaveCover(imageBuffer, slug) {
  * Download cover from URL → resize → save
  * Returns true if success, false if failed
  */
-async function downloadAndProcessCover(coverUrl, slug) {
-    const buffer = await downloadToBuffer(coverUrl);
+async function downloadAndProcessCover(coverUrl, slug, referer) {
+    const buffer = await downloadToBuffer(coverUrl, referer);
     const { fullPath, thumbPath } = await processAndSaveCover(buffer, slug);
 
     const fullSize  = fs.statSync(fullPath).size;

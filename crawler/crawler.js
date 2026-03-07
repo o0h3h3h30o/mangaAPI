@@ -464,11 +464,11 @@ async function processManga(item) {
                 sourceUrl: sourceUrl,
             });
 
-            // Download & resize cover image
+            // Download & resize cover image → saved as {id}.jpg + {id}-thumb.jpg
             if (info.coverUrl) {
                 try {
-                    const coverSlug = base.generateSlug(info.slugName || info.name || item.name);
-                    await downloadAndProcessCover(info.coverUrl, coverSlug);
+                    const referer = new URL(sourceUrl).origin;
+                    await downloadAndProcessCover(info.coverUrl, String(mangaId), referer);
                 } catch (err) {
                     console.error(`  [!] Cover download failed: ${err.message}`);
                 }
