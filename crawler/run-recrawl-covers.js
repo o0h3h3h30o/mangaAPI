@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 /**
- * Re-crawl cover images for xtoon365 manga
+ * Re-crawl cover images for manga from various sources
  * Fetch detail page → extract cover URL → download → save as {id}.jpg + {id}-thumb.jpg
  *
  * Usage:
- *   node crawler/run-recrawl-covers.js              # All xtoon365
- *   node crawler/run-recrawl-covers.js --limit 50  # Limit
- *   node crawler/run-recrawl-covers.js --id 123    # Specific manga by DB id
- *   node crawler/run-recrawl-covers.js --force     # Re-download even if files exist
+ *   node crawler/run-recrawl-covers.js                          # All xtoon365 (default)
+ *   node crawler/run-recrawl-covers.js --source jestful         # All jestful
+ *   node crawler/run-recrawl-covers.js --source raw18           # All raw18
+ *   node crawler/run-recrawl-covers.js --source jestful --limit 50
+ *   node crawler/run-recrawl-covers.js --id 123                 # Specific manga by DB id
+ *   node crawler/run-recrawl-covers.js --force                  # Re-download even if files exist
  */
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 
@@ -22,22 +24,82 @@ const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
 const COVER_SAVE_DIR = process.env.COVER_SAVE_DIR || path.join(__dirname, '../../public/cover');
 const CONCURRENCY = 5;
 
+// --------------- Source configs ---------------
+
+const SOURCES = {
+    xtoon: {
+        label: 'xtoon365',
+        dbFilter: `(from_manga18fx LIKE '%xtoon365.com%' OR from_manga18fx LIKE '%xtoon33.com%')`,
+        extractUrl(fromManga18fx) {
+            if (!fromManga18fx) return null;
+            const parts = fromManga18fx.split(',').map(s => s.trim());
+            return parts.find(u => u.includes('xtoon365.com') || u.includes('xtoon33.com')) || null;
+        },
+        async fetchCoverUrl(sourceUrl) {
+            const referer = new URL(sourceUrl).origin;
+            const html = await fetchPage(sourceUrl, referer);
+            const $ = cheerio.load(html);
+            return $('.toon-img img').attr('src') || null;
+        },
+    },
+    jestful: {
+        label: 'jestful',
+        dbFilter: `(from_manga18fx LIKE '%jestful.net%')`,
+        extractUrl(fromManga18fx) {
+            if (!fromManga18fx) return null;
+            const parts = fromManga18fx.split(',').map(s => s.trim());
+            return parts.find(u => u.includes('jestful.net')) || null;
+        },
+        async fetchCoverUrl(sourceUrl) {
+            const html = await fetchPage(sourceUrl, 'https://jestful.net');
+            const $ = cheerio.load(html);
+            const rawUrl = $('.info-cover img.thumbnail').attr('src') || '';
+            if (!rawUrl) return null;
+            // Build full URL if relative
+            if (rawUrl.startsWith('http')) return rawUrl;
+            return `https://jestful.net/${rawUrl.replace(/^\//, '')}`;
+        },
+    },
+    raw18: {
+        label: 'raw18',
+        dbFilter: `(from_manga18fx LIKE '%raw18.info%' OR from_manga18fx LIKE '%raw18.link%' OR from_manga18fx LIKE '%raw18.rest%')`,
+        extractUrl(fromManga18fx) {
+            if (!fromManga18fx) return null;
+            const parts = fromManga18fx.split(',').map(s => s.trim());
+            return parts.find(u => u.includes('raw18.info') || u.includes('raw18.link') || u.includes('raw18.rest')) || null;
+        },
+        async fetchCoverUrl(sourceUrl) {
+            // Normalize old domains → raw18.rest
+            const url = sourceUrl.replace(/raw18\.(?:info|link)/, 'raw18.rest');
+            const html = await fetchPage(url, 'https://raw18.rest');
+            const $ = cheerio.load(html);
+            const coverUrl = $('div.detail-info img[src*="admin.raw18"]').first().attr('src')
+                || $('div.col-image img[src]').first().attr('src')
+                || $('img[src*="admin.raw18"]').first().attr('src')
+                || null;
+            return coverUrl ? coverUrl.trim() : null;
+        },
+    },
+};
+
 // --------------- Args ---------------
 
 function parseArgs() {
     const args = process.argv.slice(2);
     const idIdx = args.indexOf('--id');
     const limitIdx = args.indexOf('--limit');
+    const sourceIdx = args.indexOf('--source');
     return {
         id: idIdx !== -1 ? parseInt(args[idIdx + 1], 10) : null,
         limit: limitIdx !== -1 ? parseInt(args[limitIdx + 1], 10) : null,
+        source: sourceIdx !== -1 ? args[sourceIdx + 1] : 'xtoon',
         force: args.includes('--force'),
     };
 }
 
 // --------------- DB ---------------
 
-async function getMangaList({ id, limit, force }) {
+async function getMangaList({ id, limit, force }, sourceConfig) {
     if (id) {
         const [rows] = await db.query(
             'SELECT id, slug, from_manga18fx FROM manga WHERE id = ?',
@@ -47,7 +109,7 @@ async function getMangaList({ id, limit, force }) {
     }
 
     let query = `SELECT id, slug, from_manga18fx FROM manga
-                 WHERE (from_manga18fx LIKE '%xtoon365.com%' OR from_manga18fx LIKE '%xtoon33.com%')
+                 WHERE ${sourceConfig.dbFilter}
                  ORDER BY id ASC`;
 
     if (limit) query += ` LIMIT ${parseInt(limit, 10)}`;
@@ -55,7 +117,6 @@ async function getMangaList({ id, limit, force }) {
     const [rows] = await db.query(query);
 
     if (!force) {
-        // Skip manga that already have both cover files
         return rows.filter(m => !coverExists(m.id));
     }
 
@@ -74,6 +135,35 @@ function coverPath(id) {
 function coverExists(id) {
     const { full, thumb } = coverPath(id);
     return fs.existsSync(full) && fs.existsSync(thumb);
+}
+
+async function fetchPage(url, referer, retries = 3) {
+    let lastErr;
+    for (let i = 0; i < retries; i++) {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 15000);
+        try {
+            const headers = { 'User-Agent': USER_AGENT };
+            if (referer) headers['Referer'] = referer;
+            const res = await fetch(url, withProxy({
+                headers,
+                signal: ctrl.signal,
+            }));
+            clearTimeout(timer);
+            if (res.ok) return await res.text();
+            if (res.status === 403 || res.status === 429 || res.status >= 500) {
+                lastErr = new Error(`HTTP ${res.status}`);
+                if (i < retries - 1) await sleep(1000 * (i + 1));
+                continue;
+            }
+            throw new Error(`HTTP ${res.status}`);
+        } catch (err) {
+            clearTimeout(timer);
+            lastErr = err.name === 'AbortError' ? new Error('Timeout 15s') : err;
+            if (i < retries - 1) await sleep(1000 * (i + 1));
+        }
+    }
+    throw new Error(`${lastErr.message} (after ${retries} retries)`);
 }
 
 async function downloadToBuffer(url, referer, retries = 3) {
@@ -116,61 +206,23 @@ async function saveCover(buffer, id) {
     console.log(`  [+] ${id}.jpg (${Math.round(fullSize/1024)}KB) + ${id}-thumb.jpg (${Math.round(thumbSize/1024)}KB)`);
 }
 
-// --------------- Xtoon detail page ---------------
-
-/**
- * Lấy URL xtoon từ from_manga18fx (comma-separated)
- * VD: "https://t1.xtoon365.com/comic/847551,https://www.mangaupdates.com/..."
- */
-function extractXtoonUrl(fromManga18fx) {
-    if (!fromManga18fx) return null;
-    const parts = fromManga18fx.split(',').map(s => s.trim());
-    return parts.find(u => u.includes('xtoon365.com') || u.includes('xtoon33.com')) || null;
-}
-
-async function fetchCoverUrl(xtoonUrl, retries = 3) {
-    let lastErr;
-    for (let i = 0; i < retries; i++) {
-        const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 15000);
-        try {
-            const res = await fetch(xtoonUrl, withProxy({
-                headers: { 'User-Agent': USER_AGENT },
-                signal: ctrl.signal,
-            }));
-            clearTimeout(timer);
-            if (res.ok) {
-                const html = await res.text();
-                const $ = cheerio.load(html);
-                const coverUrl = $('.toon-img img').attr('src') || '';
-                return coverUrl || null;
-            }
-            if (res.status === 403 || res.status === 429 || res.status >= 500) {
-                lastErr = new Error(`HTTP ${res.status}`);
-                if (i < retries - 1) await sleep(1000 * (i + 1));
-                continue;
-            }
-            throw new Error(`HTTP ${res.status}`);
-        } catch (err) {
-            clearTimeout(timer);
-            lastErr = err.name === 'AbortError' ? new Error('Timeout 15s') : err;
-            if (i < retries - 1) await sleep(1000 * (i + 1));
-        }
-    }
-    throw new Error(`${lastErr.message} (after ${retries} retries)`);
-}
-
 // --------------- Main ---------------
 
 async function main() {
-    const { id, limit, force } = parseArgs();
+    const { id, limit, force, source } = parseArgs();
 
-    console.log(`=== Re-crawl Covers (xtoon365) ===`);
+    const sourceConfig = SOURCES[source];
+    if (!sourceConfig) {
+        console.error(`Unknown source: ${source}. Available: ${Object.keys(SOURCES).join(', ')}`);
+        process.exit(1);
+    }
+
+    console.log(`=== Re-crawl Covers (${sourceConfig.label}) ===`);
     console.log(`Time: ${new Date().toISOString()}`);
     if (force) console.log(`[FORCE] Re-download even if files exist`);
     console.log('');
 
-    const mangaList = await getMangaList({ id, limit, force });
+    const mangaList = await getMangaList({ id, limit, force }, sourceConfig);
     console.log(`Found ${mangaList.length} manga to process\n`);
 
     if (mangaList.length === 0) {
@@ -184,17 +236,17 @@ async function main() {
     async function processOne(manga, idx) {
         const prefix = `[${idx + 1}/${total}] id=${manga.id}`;
 
-        const xtoonUrl = extractXtoonUrl(manga.from_manga18fx);
-        if (!xtoonUrl) {
-            console.log(`${prefix} — no xtoon URL, skipping`);
+        const sourceUrl = sourceConfig.extractUrl(manga.from_manga18fx);
+        if (!sourceUrl) {
+            console.log(`${prefix} — no ${sourceConfig.label} URL, skipping`);
             results.skipped++;
             return;
         }
 
-        console.log(`${prefix} ${xtoonUrl}`);
+        console.log(`${prefix} ${sourceUrl}`);
 
         try {
-            const coverUrl = await fetchCoverUrl(xtoonUrl);
+            const coverUrl = await sourceConfig.fetchCoverUrl(sourceUrl);
             if (!coverUrl) {
                 console.log(`  [x] No cover URL found on detail page`);
                 results.failed++;
@@ -202,7 +254,7 @@ async function main() {
             }
 
             console.log(`  [>] Cover: ${coverUrl}`);
-            const referer = new URL(xtoonUrl).origin;
+            const referer = new URL(sourceUrl).origin;
             const buffer = await downloadToBuffer(coverUrl, referer);
             await saveCover(buffer, manga.id);
             results.success++;

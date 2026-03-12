@@ -27,7 +27,7 @@ const cheerio = require('cheerio');
 const { withProxy } = require('../proxy');
 const { USER_AGENT } = require('./base');
 
-const BASE_URL = 'https://raw18.link';
+const BASE_URL = 'https://raw18.rest';
 const DEFAULT_PAGES = 3;
 
 // フルカラー genre (URL-encoded)
@@ -42,7 +42,7 @@ const baseUrl = BASE_URL;
  * Match URLs belonging to raw18 (update this if domain changes)
  */
 function match(url) {
-    return url.includes('raw18.info') || url.includes('raw18.link');
+    return url.includes('raw18.info') || url.includes('raw18.link') || url.includes('raw18.rest');
 }
 
 /**
@@ -241,7 +241,7 @@ async function getPageImages(chapterUrl) {
         const src = $(el).attr('src') || $(el).attr('data-original') || '';
         if (!src) return;
         // Exclude site's own logo/UI assets
-        if (src.includes('raw18.info') || src.includes('raw18.link')) return;
+        if (src.includes('raw18.info') || src.includes('raw18.link') || src.includes('raw18.rest')) return;
         images.push(src);
     });
 
@@ -252,11 +252,11 @@ async function getPageImages(chapterUrl) {
 
 /**
  * Normalize URL: replace old domain with current BASE_URL
- * raw18.info → raw18.link (transparent to DB stored URLs)
+ * raw18.info / raw18.link → raw18.rest (transparent to DB stored URLs)
  */
 function normalizeUrl(url) {
     if (!url) return url;
-    return url.replace(/https?:\/\/(?:www\.)?raw18\.info/, BASE_URL);
+    return url.replace(/https?:\/\/(?:www\.)?raw18\.(?:info|link)/, BASE_URL);
 }
 
 /**
