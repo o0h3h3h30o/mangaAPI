@@ -253,9 +253,14 @@ async function main() {
                 return;
             }
 
-            console.log(`  [>] Cover: ${coverUrl}`);
+            // imgur .jpg often returns webp — use .jpeg to get real JPEG
+            let finalCoverUrl = coverUrl;
+            if (finalCoverUrl.includes('i.imgur.com') && finalCoverUrl.endsWith('.jpg')) {
+                finalCoverUrl = finalCoverUrl.replace(/\.jpg$/, '.jpeg');
+            }
+            console.log(`  [>] Cover: ${finalCoverUrl}`);
             const referer = new URL(sourceUrl).origin;
-            const buffer = await downloadToBuffer(coverUrl, referer);
+            const buffer = await downloadToBuffer(finalCoverUrl, referer);
             await saveCover(buffer, manga.id);
             results.success++;
         } catch (err) {

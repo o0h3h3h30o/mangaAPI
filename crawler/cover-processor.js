@@ -59,6 +59,10 @@ async function processAndSaveCover(imageBuffer, id) {
  * Returns true if success, false if failed
  */
 async function downloadAndProcessCover(coverUrl, id, referer) {
+    // imgur .jpg often returns webp — use .jpeg to get real JPEG
+    if (coverUrl.includes('i.imgur.com') && coverUrl.endsWith('.jpg')) {
+        coverUrl = coverUrl.replace(/\.jpg$/, '.jpeg');
+    }
     const buffer = await downloadToBuffer(coverUrl, referer);
     const { fullPath, thumbPath } = await processAndSaveCover(buffer, id);
 
