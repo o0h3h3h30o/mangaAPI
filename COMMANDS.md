@@ -10,6 +10,7 @@ node crawler/run-crawl.js
 node crawler/run-crawl.js --source jestful
 node crawler/run-crawl.js --source raw18
 node crawler/run-crawl.js --source xtoon365
+node crawler/run-crawl.js --source manhwaweb
 
 # Crawl nhiều pages hơn
 node crawler/run-crawl.js --source jestful --pages 5
