@@ -1,8 +1,8 @@
 /**
  * Cover Image Processor
  * Download cover image → resize with sharp → save 2 versions:
- *   - {slug}.jpg      (600px width, quality 85) — detail page, OG image
- *   - {slug}-thumb.jpg (300px width, quality 80) — grid card, carousel, sidebar
+ *   - {id}.jpg      (600px width, quality 85) — detail page, OG image
+ *   - {id}-thumb.jpg (300px width, quality 80) — grid card, carousel, sidebar
  */
 const sharp = require('sharp');
 const fs = require('fs');
@@ -32,11 +32,11 @@ async function downloadToBuffer(url, referer) {
 /**
  * Resize image buffer → save 2 versions (full + thumb)
  */
-async function processAndSaveCover(imageBuffer, slug) {
+async function processAndSaveCover(imageBuffer, id) {
     fs.mkdirSync(COVER_SAVE_DIR, { recursive: true });
 
-    const fullPath  = path.join(COVER_SAVE_DIR, `${slug}.jpg`);
-    const thumbPath = path.join(COVER_SAVE_DIR, `${slug}-thumb.jpg`);
+    const fullPath  = path.join(COVER_SAVE_DIR, `${id}.jpg`);
+    const thumbPath = path.join(COVER_SAVE_DIR, `${id}-thumb.jpg`);
 
     await Promise.all([
         sharp(imageBuffer)
@@ -58,13 +58,13 @@ async function processAndSaveCover(imageBuffer, slug) {
  * Download cover from URL → resize → save
  * Returns true if success, false if failed
  */
-async function downloadAndProcessCover(coverUrl, slug, referer) {
+async function downloadAndProcessCover(coverUrl, id, referer) {
     const buffer = await downloadToBuffer(coverUrl, referer);
-    const { fullPath, thumbPath } = await processAndSaveCover(buffer, slug);
+    const { fullPath, thumbPath } = await processAndSaveCover(buffer, id);
 
     const fullSize  = fs.statSync(fullPath).size;
     const thumbSize = fs.statSync(thumbPath).size;
-    console.log(`  [+] Cover: ${slug}.jpg (${Math.round(fullSize/1024)}KB) + thumb (${Math.round(thumbSize/1024)}KB)`);
+    console.log(`  [+] Cover: ${id}.jpg (${Math.round(fullSize/1024)}KB) + thumb (${Math.round(thumbSize/1024)}KB)`);
 
     return true;
 }
@@ -72,9 +72,9 @@ async function downloadAndProcessCover(coverUrl, slug, referer) {
 /**
  * Check if both cover versions already exist
  */
-function coverExists(slug) {
-    const fullPath  = path.join(COVER_SAVE_DIR, `${slug}.jpg`);
-    const thumbPath = path.join(COVER_SAVE_DIR, `${slug}-thumb.jpg`);
+function coverExists(id) {
+    const fullPath  = path.join(COVER_SAVE_DIR, `${id}.jpg`);
+    const thumbPath = path.join(COVER_SAVE_DIR, `${id}-thumb.jpg`);
     return fs.existsSync(fullPath) && fs.existsSync(thumbPath);
 }
 
