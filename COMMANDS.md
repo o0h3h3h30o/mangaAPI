@@ -1,5 +1,35 @@
 # Crawler & Scripts Commands
 
+## Setup trên server mới
+
+```bash
+# CD vào thư mục project
+cd /home/www/wwwroot/nodejs/manhwas
+
+# Fix quyền git (chạy bằng root nhưng thư mục thuộc user www)
+git config --global --add safe.directory /home/www/wwwroot/nodejs/manhwas
+
+# Init git + kết nối repo (dùng HTTPS vì server không có SSH key)
+git init
+git remote add origin https://github.com/o0h3h3h30o/mangaAPI.git
+git fetch origin
+git checkout -b main origin/main
+
+# Install dependencies
+npm install
+
+# Copy file .env (sửa DB_HOST, DB_NAME, PROXY_USER, PROXY_PASS...)
+cp .env.example .env
+vi .env
+```
+
+## Pull code mới từ GitHub
+
+```bash
+cd /home/www/wwwroot/nodejs/manhwas
+git pull
+```
+
 ## Crawl truyện mới
 
 ```bash
