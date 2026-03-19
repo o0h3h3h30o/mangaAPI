@@ -12,10 +12,11 @@
  *   node crawler/run-crawl.js --source xtoon365 --url https://t1.xtoon365.com/category/theme/302/finish/1  # Custom URL
  *   node crawler/run-crawl.js --source xtoon365 --pages 5 --start-page 3  # Pages 3-7
  *   node crawler/run-crawl.js --list                       # List available parsers
+ *   node crawler/run-crawl.js --source manhwaweb --manga-url https://manhwawebbackend-production.up.railway.app/manhwa/see/secret_class_1679631363177  # Single manga
  */
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 
-const { crawlSite, crawlAll } = require('./crawler');
+const { crawlSite, crawlAll, processManga } = require('./crawler');
 const { getAllParsers, getParserByName } = require('./parsers');
 const base = require('./parsers/base');
 
@@ -35,6 +36,7 @@ function parseArgs() {
     const pagesIdx = args.indexOf('--pages');
     const urlIdx = args.indexOf('--url');
     const startPageIdx = args.indexOf('--start-page');
+    const mangaUrlIdx = args.indexOf('--manga-url');
     return {
         isDryRun: args.includes('--dry-run'),
         isList: args.includes('--list'),
@@ -42,11 +44,12 @@ function parseArgs() {
         pages: pagesIdx !== -1 ? parseInt(args[pagesIdx + 1], 10) : undefined,
         url: urlIdx !== -1 ? args[urlIdx + 1] : undefined,
         startPage: startPageIdx !== -1 ? parseInt(args[startPageIdx + 1], 10) : undefined,
+        mangaUrl: mangaUrlIdx !== -1 ? args[mangaUrlIdx + 1] : undefined,
     };
 }
 
 async function main() {
-    const { isDryRun, isList, sourceName, pages, url, startPage } = parseArgs();
+    const { isDryRun, isList, sourceName, pages, url, startPage, mangaUrl } = parseArgs();
 
     // --list: show available parsers
     if (isList) {
@@ -89,6 +92,25 @@ async function main() {
                 console.log('');
             }
         }
+        process.exit(0);
+    }
+
+    // Single manga URL
+    if (mangaUrl) {
+        console.log(`=== Single manga: ${mangaUrl} ===\n`);
+        try {
+            const result = await processManga({
+                name: 'single',
+                url: mangaUrl,
+                coverUrl: '',
+                chapters: [],
+                latestChapterNum: 0,
+            });
+            console.log(`\nResult: ${result.status}${result.mangaId ? ', id=' + result.mangaId : ''}`);
+        } catch (err) {
+            console.error('Error:', err.message);
+        }
+        await flushApiCache();
         process.exit(0);
     }
 
