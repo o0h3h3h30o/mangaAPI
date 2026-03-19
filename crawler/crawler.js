@@ -430,9 +430,6 @@ async function processManga(item) {
         console.log(`  [>] Found ${allChapters.length} total, ${newChapters.length} new`);
 
         const inserted = await insertChapters(manga.id, newChapters, siteParser);
-        if (inserted > 0) {
-            await syncMangaTimeFromChapter(manga.id);
-        }
         return { status: 'updated', name: item.name, inserted };
 
     } else {
@@ -497,9 +494,6 @@ async function processManga(item) {
             console.log(`  [>] Found ${allChapters.length} chapters`);
 
             const inserted = await insertChapters(mangaId, allChapters, siteParser);
-            if (inserted > 0) {
-                await syncMangaTimeFromChapter(mangaId);
-            }
             return { status: 'created', name: item.name, mangaId, inserted };
         }
     }
