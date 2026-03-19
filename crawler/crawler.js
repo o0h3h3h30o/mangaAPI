@@ -520,14 +520,18 @@ async function crawlSite(parserName, options = {}) {
         const pageItems = siteParser.parseHomepage(html);
         console.log(`  Found ${pageItems.length} manga\n`);
 
-        for (const item of pageItems) {
-            try {
-                const result = await processManga(item);
-                results[result.status] = (results[result.status] || 0) + 1;
-            } catch (err) {
-                console.error(`  [!] Error processing "${item.name}":`, err.message);
-                results.errors++;
-            }
+        const CONCURRENCY = 10;
+        for (let j = 0; j < pageItems.length; j += CONCURRENCY) {
+            const batch = pageItems.slice(j, j + CONCURRENCY);
+            await Promise.all(batch.map(async (item) => {
+                try {
+                    const result = await processManga(item);
+                    results[result.status] = (results[result.status] || 0) + 1;
+                } catch (err) {
+                    console.error(`  [!] Error processing "${item.name}":`, err.message);
+                    results.errors++;
+                }
+            }));
         }
 
         console.log(`  [Page ${i + 1} done] Created: ${results.created}, Updated: ${results.updated}, Errors: ${results.errors}\n`);
