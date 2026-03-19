@@ -86,6 +86,14 @@ function parseHomepage(jsonStr) {
 /**
  * Parse manga detail JSON → extract manga info
  */
+function getLastChapterTime(chapters) {
+    if (!Array.isArray(chapters) || chapters.length === 0) return null;
+    const withLink = chapters.filter(ch => ch.link && ch.create);
+    if (withLink.length === 0) return null;
+    const latest = withLink.reduce((a, b) => (a.create > b.create ? a : b));
+    return Math.floor(latest.create / 1000); // ms → unix seconds
+}
+
 function extractMangaInfo(jsonStr) {
     const data = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr;
 
@@ -116,6 +124,7 @@ function extractMangaInfo(jsonStr) {
         description: data._sinopsis || '',
         caution: data._erotico === 'si',
         tipo: data._tipo || null,
+        lastChapterTime: getLastChapterTime(data.chapters),
     };
 }
 
