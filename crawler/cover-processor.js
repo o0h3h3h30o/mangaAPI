@@ -25,13 +25,13 @@ async function downloadToBuffer(url, referer) {
     const headers = { 'User-Agent': USER_AGENT };
     if (referer) headers['Referer'] = referer;
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 15000);
+    const timer = setTimeout(() => ctrl.abort(), 10000);
     try {
         const res = await fetch(url, withProxy({ headers, signal: ctrl.signal }));
         if (!res.ok) throw new Error(`HTTP ${res.status} downloading ${url}`);
         return Buffer.from(await res.arrayBuffer());
     } catch (err) {
-        if (err.name === 'AbortError') throw new Error('Cover download timeout 15s');
+        if (err.name === 'AbortError') throw new Error('Cover download timeout 10s');
         throw err;
     } finally {
         clearTimeout(timer);
