@@ -33,10 +33,11 @@ async function findMangaByName(name) {
     );
     if (exact.length > 0) return exact[0];
 
-    // Try LIKE match on otherNames (covers cases where list name differs from inserted name)
+    // Try exact match on otherNames (comma-separated list)
     const [other] = await db.query(
-        'SELECT id, name, slug, from_manga18fx, chapter_1 FROM manga WHERE otherNames LIKE ? LIMIT 1',
-        [`%${name}%`]
+        `SELECT id, name, slug, from_manga18fx, chapter_1 FROM manga
+         WHERE FIND_IN_SET(?, REPLACE(otherNames, ', ', ',')) > 0 LIMIT 1`,
+        [name]
     );
     if (other.length > 0) return other[0];
 
