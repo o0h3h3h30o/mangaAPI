@@ -26,12 +26,19 @@ async function findMangaBySource(sourceUrl) {
  * Find manga by name (exact or FULLTEXT)
  */
 async function findMangaByName(name) {
-    // Try exact match first
+    // Try exact match on name first
     const [exact] = await db.query(
         'SELECT id, name, slug, from_manga18fx, chapter_1 FROM manga WHERE name = ? LIMIT 1',
         [name]
     );
     if (exact.length > 0) return exact[0];
+
+    // Try LIKE match on otherNames (covers cases where list name differs from inserted name)
+    const [other] = await db.query(
+        'SELECT id, name, slug, from_manga18fx, chapter_1 FROM manga WHERE otherNames LIKE ? LIMIT 1',
+        [`%${name}%`]
+    );
+    if (other.length > 0) return other[0];
 
     // Try fulltext match (may fail if FULLTEXT index is missing)
     try {
@@ -463,6 +470,10 @@ async function processManga(item) {
             console.log(`  [+] New manga, fetching detail...`);
             const detailHtml = await base.fetchPage(sourceUrl);
             const info = siteParser.extractMangaInfo(detailHtml);
+            if (info.skip) {
+                console.log(`  [~] Skipped (Korean-only name: "${info.name}")`);
+                return { status: 'skipped', name: item.name };
+            }
             console.log(`  [+] Parsed: "${info.name}", genres=[${info.genres.join(', ')}], status=${info.status}${info.caution ? ', 19+' : ''}`);
 
             const mangaId = await insertManga({

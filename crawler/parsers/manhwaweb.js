@@ -104,8 +104,9 @@ function extractMangaInfo(jsonStr) {
     const authors = data._extras?.autores || [];
 
     return {
-        name: data.the_real_name || data.name_esp || '',
-        slugName: data.the_real_name || data.name_esp || '',
+        skip: isKorean(data.the_real_name || ''),
+        name: data.name_esp || data.the_real_name || '',
+        slugName: data.name_esp || data.the_real_name || '',
         coverUrl: data._imagen || '',
         otherNames: [...new Set([data._name, data.name_raw, data.name_esp, data.the_real_name].filter(Boolean))].join(', '),
         genres,
