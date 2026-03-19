@@ -191,7 +191,7 @@ async function insertManga(data) {
 
     const [result] = await db.query(
         `INSERT INTO manga (name, slug, summary, otherNames, from_manga18fx, status_id, type_id, is_public, caution, created_at, updated_at, create_at, update_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, NOW(), NOW(), UNIX_TIMESTAMP(), ${data.lastChapterTime ? '?' : 'UNIX_TIMESTAMP()'})`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, NOW(), NOW(), UNIX_TIMESTAMP(), UNIX_TIMESTAMP())`,
         [
             stripEmoji(data.name),
             slug || '__temp__',
@@ -201,7 +201,6 @@ async function insertManga(data) {
             statusId,
             typeId,
             data.caution ? 1 : 0,
-            ...(data.lastChapterTime ? [data.lastChapterTime] : []),
         ]
     );
 
@@ -477,7 +476,6 @@ async function processManga(item) {
                 authors: info.authors,
                 status: info.status,
                 tipo: info.tipo,
-                lastChapterTime: info.lastChapterTime,
                 genres: info.genres,
                 caution: info.caution || false,
                 sourceUrl: sourceUrl,
