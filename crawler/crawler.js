@@ -15,9 +15,12 @@ const { cacheDelPrefix } = require('../config/cache');
  * Find manga by source URL in from_manga18fx (comma-separated field)
  */
 async function findMangaBySource(sourceUrl) {
+    // Exact match or match as comma-separated item
     const [rows] = await db.query(
-        'SELECT id, name, slug, from_manga18fx, chapter_1 FROM manga WHERE from_manga18fx LIKE ? LIMIT 1',
-        [`%${sourceUrl}%`]
+        `SELECT id, name, slug, from_manga18fx, chapter_1 FROM manga
+         WHERE from_manga18fx = ? OR FIND_IN_SET(?, REPLACE(from_manga18fx, ', ', ',')) > 0
+         LIMIT 1`,
+        [sourceUrl, sourceUrl]
     );
     return rows.length > 0 ? rows[0] : null;
 }
