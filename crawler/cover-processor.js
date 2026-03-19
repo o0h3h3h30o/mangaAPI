@@ -21,21 +21,28 @@ const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
 /**
  * Download image URL → Buffer
  */
-async function downloadToBuffer(url, referer) {
+async function downloadToBuffer(url, referer, retries = 3) {
     const headers = { 'User-Agent': USER_AGENT };
     if (referer) headers['Referer'] = referer;
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 10000);
-    try {
-        const res = await fetch(url, withProxy({ headers, signal: ctrl.signal }));
-        if (!res.ok) throw new Error(`HTTP ${res.status} downloading ${url}`);
-        return Buffer.from(await res.arrayBuffer());
-    } catch (err) {
-        if (err.name === 'AbortError') throw new Error('Cover download timeout 10s');
-        throw err;
-    } finally {
-        clearTimeout(timer);
+    let lastErr;
+    for (let i = 0; i < retries; i++) {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 10000);
+        try {
+            const res = await fetch(url, withProxy({ headers, signal: ctrl.signal }));
+            clearTimeout(timer);
+            if (res.ok) return Buffer.from(await res.arrayBuffer());
+            lastErr = new Error(`HTTP ${res.status}`);
+        } catch (err) {
+            clearTimeout(timer);
+            lastErr = err.name === 'AbortError' ? new Error('Timeout 10s') : err;
+        }
+        if (i < retries - 1) {
+            console.log(`  [~] Cover retry ${i + 1}/${retries - 1} (${lastErr.message})`);
+            await new Promise(r => setTimeout(r, 1000));
+        }
     }
+    throw new Error(`Cover download failed: ${lastErr.message} (after ${retries} retries)`);
 }
 
 /**
