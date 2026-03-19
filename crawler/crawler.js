@@ -520,7 +520,7 @@ async function crawlSite(parserName, options = {}) {
         const pageItems = siteParser.parseHomepage(html);
         console.log(`  Found ${pageItems.length} manga\n`);
 
-        const CONCURRENCY = 10;
+        const CONCURRENCY = 2;
         for (let j = 0; j < pageItems.length; j += CONCURRENCY) {
             const batch = pageItems.slice(j, j + CONCURRENCY);
             await Promise.all(batch.map(async (item) => {
