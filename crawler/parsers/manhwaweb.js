@@ -104,10 +104,10 @@ function extractMangaInfo(jsonStr) {
     const authors = data._extras?.autores || [];
 
     return {
-        name: data.name_raw || data.the_real_name || data.name_esp || '',
-        slugName: data.name_raw || data.the_real_name || data.name_esp || '',
+        name: data.the_real_name || data.name_esp || '',
+        slugName: data.the_real_name || data.name_esp || '',
         coverUrl: data._imagen || '',
-        otherNames: [data.the_real_name, data.name_esp, data.name_raw].filter(Boolean).join(', '),
+        otherNames: [...new Set([data._name, data.name_raw, data.name_esp, data.the_real_name].filter(Boolean))].join(', '),
         genres,
         status,
         authors,
