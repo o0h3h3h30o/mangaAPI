@@ -16,22 +16,12 @@ const DEFAULT_PAGES = 3;
 
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
-// Genre ID → name mapping
-const GENRE_MAP = {
-    1: 'Drama', 3: 'Action', 4: 'Thriller', 5: 'Horror',
-    6: 'Sci-Fi', 7: 'Supernatural', 8: 'Mystery', 9: 'Slice of Life',
-    10: 'Romance', 11: 'Psychological', 12: 'Sports', 13: 'Historical',
-    14: 'Mecha', 15: 'Music', 16: 'Tragedy', 17: 'Martial Arts',
-    18: 'Comedy', 19: 'Harem', 20: 'Mature', 21: 'Smut',
-    22: 'School', 23: 'Fantasy', 24: 'Gender Bender', 25: 'Yaoi',
-    26: 'Yuri', 27: 'Shoujo Ai', 28: 'Shounen Ai', 29: 'Adventure',
-    30: 'Ecchi', 31: 'Doujinshi', 32: 'Isekai', 33: 'Survival',
-    34: 'Crime', 35: 'Medical', 36: 'Cooking', 37: 'Military',
-    38: 'Police', 39: 'Space', 40: 'Game', 41: 'Demons',
-    42: 'Vampire', 43: 'Zombie', 44: 'Gore', 45: 'Monsters',
-    46: 'Samurai', 47: 'Ninja', 48: 'Philosophical', 49: 'Magic',
-    50: 'Reincarnation', 51: 'Office Workers',
-};
+/**
+ * Check if text contains Korean characters (Hangul)
+ */
+function isKorean(text) {
+    return /[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]/.test(text);
+}
 
 function match(url) {
     return url.includes('manhwaweb.com') || url.includes('manhwawebbackend-production.up.railway.app');
@@ -74,8 +64,15 @@ function parseHomepage(jsonStr) {
         const realId = item.real_id || item._id;
         if (!realId) continue;
 
+        // Skip novels
+        if (item._tipo === 'novela') continue;
+
+        // Skip entries with Korean-only names (toptoon raws without translation)
+        const itemName = item.name_raw || item.the_real_name || item.name_esp || '';
+        if (isKorean(itemName) && !item.name_esp) continue;
+
         results.push({
-            name: item.name_raw || item.the_real_name || item.name_esp || '',
+            name: itemName,
             url: `${API_BASE}/manhwa/see/${realId}`,
             coverUrl: item._imagen || '',
             chapters: [],
@@ -95,14 +92,9 @@ function extractMangaInfo(jsonStr) {
     const genres = [];
     if (Array.isArray(data._categoris)) {
         for (const cat of data._categoris) {
-            if (typeof cat === 'object') {
-                // { "1": "Drama" } format from detail API
-                const val = Object.values(cat)[0];
-                if (val) genres.push(val);
-            } else if (typeof cat === 'number') {
-                // Number format from list API
-                if (GENRE_MAP[cat]) genres.push(GENRE_MAP[cat]);
-            }
+            // Detail API format: { "1": "Drama" }
+            const val = Object.values(cat)[0];
+            if (val) genres.push(val);
         }
     }
 
@@ -123,6 +115,7 @@ function extractMangaInfo(jsonStr) {
         tags: [],
         description: data._sinopsis || '',
         caution: data._erotico === 'si',
+        tipo: data._tipo || null,
     };
 }
 
@@ -148,12 +141,17 @@ async function getPageImages(chapterUrl) {
     return data.chapter?.img || [];
 }
 
+function formatChapterTitle(number) {
+    return `Capítulo ${number}`;
+}
+
 module.exports = {
     name,
     baseUrl,
     match,
     getHomepageUrls,
     parseHomepage,
+    formatChapterTitle,
     extractMangaInfo,
     getFullChapterList,
     getPageImages,

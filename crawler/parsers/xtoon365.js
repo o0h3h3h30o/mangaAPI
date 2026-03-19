@@ -242,6 +242,10 @@ async function getPageImages(chapterUrl) {
     return images;
 }
 
+function formatChapterTitle(number) {
+    return `제${number}화`;
+}
+
 // --------------- Export ---------------
 
 module.exports = {
@@ -253,4 +257,5 @@ module.exports = {
     extractMangaInfo,
     getFullChapterList,
     getPageImages,
+    formatChapterTitle,
 };

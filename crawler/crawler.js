@@ -110,6 +110,16 @@ function mapStatusId(status) {
 }
 
 /**
+ * Map comic type text → type_id (1=manga, 2=manhwa, 3=manhua)
+ */
+function mapTypeId(tipo) {
+    if (tipo === 'manga') return 1;
+    if (tipo === 'manhwa') return 2;
+    if (tipo === 'manhua') return 3;
+    return null;
+}
+
+/**
  * Find or create a category by name, return category_id
  */
 async function findOrCreateCategory(name) {
@@ -173,10 +183,11 @@ async function findOrCreateTag(name) {
 async function insertManga(data) {
     let slug = base.generateSlug(data.slugName || data.name);
     const statusId = mapStatusId(data.status);
+    const typeId = mapTypeId(data.tipo);
 
     const [result] = await db.query(
-        `INSERT INTO manga (name, slug, summary, otherNames, from_manga18fx, status_id, is_public, caution, created_at, updated_at, create_at, update_at)
-         VALUES (?, ?, ?, ?, ?, ?, 1, ?, NOW(), NOW(), UNIX_TIMESTAMP(), UNIX_TIMESTAMP())`,
+        `INSERT INTO manga (name, slug, summary, otherNames, from_manga18fx, status_id, type_id, is_public, caution, created_at, updated_at, create_at, update_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, NOW(), NOW(), UNIX_TIMESTAMP(), UNIX_TIMESTAMP())`,
         [
             stripEmoji(data.name),
             slug || '__temp__',
@@ -184,6 +195,7 @@ async function insertManga(data) {
             stripEmoji(data.otherNames || ''),
             data.sourceUrl || '',
             statusId,
+            typeId,
             data.caution ? 1 : 0,
         ]
     );
@@ -261,7 +273,7 @@ async function appendSourceUrl(mangaId, currentValue, newSourceUrl) {
  * Batch insert chapters with is_show = 0
  * Uses INSERT IGNORE to skip duplicates (unique_manga_chapter)
  */
-async function insertChapters(mangaId, chapters) {
+async function insertChapters(mangaId, chapters, siteParser = null) {
     if (chapters.length === 0) return 0;
 
     // Safety: filter out chapters whose source_url or number already exists in DB
@@ -295,7 +307,7 @@ async function insertChapters(mangaId, chapters) {
         const ts = appendCurrentTime(ch.created_at);
         return [
             mangaId,
-            ch.title || `第${ch.number}話`,
+            ch.title || (siteParser.formatChapterTitle ? siteParser.formatChapterTitle(ch.number) : `第${ch.number}話`),
             base.generateChapterSlug(ch.number),
             ch.number,
             0,  // is_show = 0
@@ -413,7 +425,7 @@ async function processManga(item) {
 
         console.log(`  [>] Found ${allChapters.length} total, ${newChapters.length} new`);
 
-        const inserted = await insertChapters(manga.id, newChapters);
+        const inserted = await insertChapters(manga.id, newChapters, siteParser);
         if (inserted > 0 && siteParser.name === 'xtoon365') {
             await syncMangaTimeFromChapter(manga.id);
         }
@@ -439,7 +451,7 @@ async function processManga(item) {
 
             console.log(`  [>] Found ${allChapters.length} total, ${newChapters.length} new`);
 
-            const inserted = await insertChapters(manga.id, newChapters);
+            const inserted = await insertChapters(manga.id, newChapters, siteParser);
             if (inserted > 0 && siteParser.name === 'xtoon365') {
                 await syncMangaTimeFromChapter(manga.id);
             }
@@ -459,6 +471,7 @@ async function processManga(item) {
                 otherNames: info.otherNames,
                 authors: info.authors,
                 status: info.status,
+                tipo: info.tipo,
                 genres: info.genres,
                 caution: info.caution || false,
                 sourceUrl: sourceUrl,
@@ -479,7 +492,7 @@ async function processManga(item) {
             const allChapters = await siteParser.getFullChapterList(sourceUrl);
             console.log(`  [>] Found ${allChapters.length} chapters`);
 
-            const inserted = await insertChapters(mangaId, allChapters);
+            const inserted = await insertChapters(mangaId, allChapters, siteParser);
             if (inserted > 0 && siteParser.name === 'xtoon365') {
                 await syncMangaTimeFromChapter(mangaId);
             }
