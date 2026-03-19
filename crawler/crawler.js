@@ -680,7 +680,7 @@ async function crawlChapterPages(options = {}) {
     console.log(`Found ${chapters.length} unpublished chapters to crawl\n`);
 
     const results = { success: 0, failed: 0, skipped: 0 };
-    const CHAPTER_CONCURRENCY = 5;
+    const CHAPTER_CONCURRENCY = 10;
 
     async function processOneChapter(ch) {
         try {
