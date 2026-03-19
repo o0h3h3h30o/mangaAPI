@@ -126,11 +126,13 @@ async function getFullChapterList(mangaSourceUrl) {
     const data = await fetchJson(mangaSourceUrl);
     const chapters = data.chapters || [];
 
-    return chapters.map(ch => ({
-        number: ch.chapter,
-        url: `${API_BASE}/chapters/see/${data.real_id}-${ch.chapter}`,
-        created_at: ch.create ? new Date(ch.create).toISOString() : null,
-    }));
+    return chapters
+        .filter(ch => ch.link) // Skip chapters without link (locked/unreleased)
+        .map(ch => ({
+            number: ch.chapter,
+            url: `${API_BASE}/chapters/see/${data.real_id}-${ch.chapter}`,
+            created_at: ch.create ? new Date(ch.create).toISOString() : null,
+        }));
 }
 
 /**
