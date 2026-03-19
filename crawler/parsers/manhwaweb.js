@@ -38,45 +38,52 @@ async function fetchJson(url) {
 /**
  * Get homepage URLs (paginated API)
  */
-function getHomepageUrls(pages, customUrl, startPage) {
-    const count = pages || DEFAULT_PAGES;
-    const start = startPage || 1;
-    const urls = [];
-    for (let page = start; page < start + count; page++) {
-        if (customUrl) {
+function getHomepageUrls(pages, customUrl) {
+    if (customUrl) {
+        const count = pages || DEFAULT_PAGES;
+        const urls = [];
+        for (let page = 1; page <= count; page++) {
             urls.push(customUrl.replace(/page=\d+/, `page=${page}`));
-        } else {
-            urls.push(`${API_BASE}/manhwa/library?buscar=&estado=&tipo=&erotico=&demografia=&order_item=last_update&order_dir=desc&page=${page}&generes=`);
         }
+        return urls;
     }
-    return urls;
+    // Default: single call to new-manhwa API
+    return [`${API_BASE}/latest/new-manhwa`];
 }
 
 /**
  * Parse homepage JSON → array of manga items
+ * Supports both /latest/new-manhwa and /manhwa/library formats
  */
 function parseHomepage(jsonStr) {
     const data = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr;
-    const items = data.data || [];
-    const results = [];
 
-    for (const item of items) {
-        const realId = item.real_id || item._id;
-        if (!realId) continue;
+    // new-manhwa format: { manhwas: { _manhwas: [...], manhwas_esp: [...] } }
+    const rawItems = [
+        ...(data.manhwas?._manhwas || []),
+        ...(data.manhwas?.manhwas_esp || []),
+        ...(data.data || []),
+    ];
+    const results = [];
+    const seen = new Set();
+
+    for (const item of rawItems) {
+        const realId = item.id_manhwa || item.real_id || item._id;
+        if (!realId || seen.has(realId)) continue;
+        seen.add(realId);
 
         // Skip novels
         if (item._tipo === 'novela') continue;
 
-        // Skip entries with Korean-only names (toptoon raws without translation)
-        const itemName = item.name_raw || item.the_real_name || item.name_esp || '';
-        if (isKorean(itemName) && !item.name_esp) continue;
+        const itemName = item.name_manhwa || item.name_raw || item.the_real_name || item.name_esp || '';
+        if (isKorean(itemName)) continue;
 
         results.push({
             name: itemName,
             url: `${API_BASE}/manhwa/see/${realId}`,
-            coverUrl: item._imagen || '',
+            coverUrl: item.img || item._imagen || '',
             chapters: [],
-            latestChapterNum: item._numero_cap || 0,
+            latestChapterNum: item.chapter || item._numero_cap || 0,
         });
     }
 
