@@ -514,27 +514,25 @@ async function crawlSite(parserName, options = {}) {
         ? siteParser.getHomepageUrls(options.pages, options.url, options.startPage)
         : [siteParser.baseUrl];
 
-    const items = [];
+    const results = { skipped: 0, updated: 0, created: 0, linked: 0, errors: 0 };
+
     for (let i = 0; i < urls.length; i++) {
         console.log(`[Page ${i + 1}/${urls.length}] ${urls[i]}`);
         const html = await base.fetchPage(urls[i]);
         const pageItems = siteParser.parseHomepage(html);
         console.log(`  Found ${pageItems.length} manga\n`);
-        items.push(...pageItems);
-    }
 
-    console.log(`Total: ${items.length} manga from ${urls.length} page(s)\n`);
-
-    const results = { skipped: 0, updated: 0, created: 0, linked: 0, errors: 0 };
-
-    for (const item of items) {
-        try {
-            const result = await processManga(item);
-            results[result.status] = (results[result.status] || 0) + 1;
-        } catch (err) {
-            console.error(`  [!] Error processing "${item.name}":`, err.message);
-            results.errors++;
+        for (const item of pageItems) {
+            try {
+                const result = await processManga(item);
+                results[result.status] = (results[result.status] || 0) + 1;
+            } catch (err) {
+                console.error(`  [!] Error processing "${item.name}":`, err.message);
+                results.errors++;
+            }
         }
+
+        console.log(`  [Page ${i + 1} done] Created: ${results.created}, Updated: ${results.updated}, Errors: ${results.errors}\n`);
     }
 
     console.log(`\n=== Summary [${siteParser.name}] ===`);
