@@ -110,13 +110,17 @@ function mapStatusId(status) {
 }
 
 /**
- * Map comic type text → type_id (1=manga, 2=manhwa, 3=manhua)
+ * Find or create comictype by label, return type_id
  */
-function mapTypeId(tipo) {
-    if (tipo === 'manga') return 1;
-    if (tipo === 'manhwa') return 2;
-    if (tipo === 'manhua') return 3;
-    return null;
+async function findOrCreateType(tipo) {
+    if (!tipo) return null;
+    const label = tipo.charAt(0).toUpperCase() + tipo.slice(1).toLowerCase(); // "manhwa" → "Manhwa"
+    const [rows] = await db.query('SELECT id FROM comictype WHERE label = ? LIMIT 1', [label]);
+    if (rows.length > 0) return rows[0].id;
+
+    const [result] = await db.query('INSERT INTO comictype (label) VALUES (?)', [label]);
+    console.log(`    [+] Created comictype: "${label}" (id=${result.insertId})`);
+    return result.insertId;
 }
 
 /**
@@ -183,7 +187,7 @@ async function findOrCreateTag(name) {
 async function insertManga(data) {
     let slug = base.generateSlug(data.slugName || data.name);
     const statusId = mapStatusId(data.status);
-    const typeId = mapTypeId(data.tipo);
+    const typeId = await findOrCreateType(data.tipo);
 
     const [result] = await db.query(
         `INSERT INTO manga (name, slug, summary, otherNames, from_manga18fx, status_id, type_id, is_public, caution, created_at, updated_at, create_at, update_at)
