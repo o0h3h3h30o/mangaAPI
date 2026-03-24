@@ -62,16 +62,16 @@ const SOURCES = {
     },
     raw18: {
         label: 'raw18',
-        dbFilter: `(from_manga18fx LIKE '%raw18.info%' OR from_manga18fx LIKE '%raw18.link%' OR from_manga18fx LIKE '%raw18.rest%')`,
+        dbFilter: `(from_manga18fx LIKE '%raw18.info%' OR from_manga18fx LIKE '%raw18.link%' OR from_manga18fx LIKE '%raw18.rest%' OR from_manga18fx LIKE '%raw18.win%')`,
         extractUrl(fromManga18fx) {
             if (!fromManga18fx) return null;
             const parts = fromManga18fx.split(',').map(s => s.trim());
-            return parts.find(u => u.includes('raw18.info') || u.includes('raw18.link') || u.includes('raw18.rest')) || null;
+            return parts.find(u => u.includes('raw18.info') || u.includes('raw18.link') || u.includes('raw18.rest') || u.includes('raw18.win')) || null;
         },
         async fetchCoverUrl(sourceUrl) {
-            // Normalize old domains → raw18.rest
-            const url = sourceUrl.replace(/raw18\.(?:info|link)/, 'raw18.rest');
-            const html = await fetchPage(url, 'https://raw18.rest');
+            // Normalize old domains → raw18.win
+            const url = sourceUrl.replace(/raw18\.(?:info|link|rest)/, 'raw18.win');
+            const html = await fetchPage(url, 'https://raw18.win');
             const $ = cheerio.load(html);
             const coverUrl = $('div.detail-info img[src*="admin.raw18"]').first().attr('src')
                 || $('div.col-image img[src]').first().attr('src')
