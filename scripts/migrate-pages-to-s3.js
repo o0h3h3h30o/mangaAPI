@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 /**
- * Migrate page images from external sources to Hetzner S3
+ * Migrate page images from external sources to S3/MinIO
  *
- * Flow: Source (jfimv2.xyz) --[proxy]--> RAM buffer ---> Hetzner S3
+ * Flow: Source (jfimv2.xyz) --[proxy]--> RAM buffer ---> S3/MinIO
  *       Then UPDATE page SET image_local = '{filename}'
  *
  * Usage:
- *   node scripts/migrate-pages-to-s3.js                    # Only unmigrated pages
+ *   node scripts/migrate-pages-to-s3.js                    # Only unmigrated pages → Hetzner S3
+ *   node scripts/migrate-pages-to-s3.js --target minio     # Upload to MinIO instead
  *   node scripts/migrate-pages-to-s3.js --force            # Re-upload ALL pages
- *   node scripts/migrate-pages-to-s3.js --verify           # Check S3, only upload missing
+ *   node scripts/migrate-pages-to-s3.js --verify           # Check storage, only upload missing
  *   node scripts/migrate-pages-to-s3.js --limit 10000      # First 10K pages
  *   node scripts/migrate-pages-to-s3.js --chapter-id 123   # One chapter
  *   node scripts/migrate-pages-to-s3.js --concurrency 200  # Custom concurrency
@@ -17,7 +18,7 @@
 require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
 
 const db = require('../config/database');
-const { uploadToS3, existsOnS3 } = require('../lib/s3');
+const { uploadToS3, existsOnS3, uploadToMinio, existsOnMinio } = require('../lib/s3');
 const { withProxy } = require('../crawler/proxy');
 
 const BATCH_SIZE = 1000;
@@ -32,6 +33,7 @@ function parseArgs() {
     const chapterIdx = args.indexOf('--chapter-id');
     const concIdx = args.indexOf('--concurrency');
     const dirIdx = args.indexOf('--direction');
+    const targetIdx = args.indexOf('--target');
     return {
         force: args.includes('--force'),
         verify: args.includes('--verify'),
@@ -39,6 +41,7 @@ function parseArgs() {
         chapterId: chapterIdx !== -1 ? parseInt(args[chapterIdx + 1], 10) : null,
         concurrency: concIdx !== -1 ? parseInt(args[concIdx + 1], 10) : DEFAULT_CONCURRENCY,
         direction: dirIdx !== -1 && args[dirIdx + 1] === 'desc' ? 'desc' : 'asc',
+        target: targetIdx !== -1 && args[targetIdx + 1] === 'minio' ? 'minio' : 's3',
     };
 }
 
@@ -86,6 +89,19 @@ function getS3Key(page) {
     return { filename, s3Key: `chapter/${page.chapter_id}/${filename}` };
 }
 
+// Upload/exists functions resolved per target
+let _upload, _exists;
+
+function setTarget(target) {
+    if (target === 'minio') {
+        _upload = uploadToMinio;
+        _exists = existsOnMinio;
+    } else {
+        _upload = uploadToS3;
+        _exists = existsOnS3;
+    }
+}
+
 async function processPage(page) {
     const { filename, s3Key } = getS3Key(page);
     // Referer = source site origin (e.g. https://t1.xtoon365.com)
@@ -94,7 +110,7 @@ async function processPage(page) {
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         try {
             const buffer = await downloadImage(page.image, referer);
-            await uploadToS3(s3Key, buffer, getContentType(page.image));
+            await _upload(s3Key, buffer, getContentType(page.image));
             await db.query('UPDATE page SET image_local = ? WHERE id = ?', [filename, page.id]);
             return true;
         } catch (err) {
@@ -194,7 +210,7 @@ async function runVerifyMode({ limit, chapterId, concurrency }) {
         const missingPages = [];
         await runPool(pages, verifyConcurrency, async (page) => {
             const { s3Key } = getS3Key(page);
-            const exists = await existsOnS3(s3Key);
+            const exists = await _exists(s3Key);
             if (!exists) missingPages.push(page);
             return exists ? 'skipped' : true;
         });
@@ -302,11 +318,15 @@ async function runMigrateMode({ force, limit, chapterId, concurrency, direction 
 async function main() {
     const opts = parseArgs();
 
-    console.log('=== Migrate Pages to S3 ===');
+    setTarget(opts.target);
+
+    const targetLabel = opts.target === 'minio' ? 'MinIO' : 'Hetzner S3';
+    console.log(`=== Migrate Pages to ${targetLabel} ===`);
     console.log(`Time: ${new Date().toISOString()}`);
-    const mode = opts.verify ? 'VERIFY (check S3, upload missing)' :
+    const mode = opts.verify ? `VERIFY (check ${targetLabel}, upload missing)` :
                  opts.force ? 'FORCE (re-upload all)' : 'incremental (unmigrated only)';
     console.log(`Mode: ${mode}`);
+    console.log(`Target: ${targetLabel}`);
     console.log(`Direction: ${opts.direction.toUpperCase()}`);
     console.log(`Concurrency: ${opts.concurrency}`);
     if (opts.limit) console.log(`Limit: ${opts.limit}`);
