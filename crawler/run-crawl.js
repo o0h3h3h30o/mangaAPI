@@ -12,7 +12,11 @@
  *   node crawler/run-crawl.js --source xtoon365 --url https://t1.xtoon365.com/category/theme/302/finish/1  # Custom URL
  *   node crawler/run-crawl.js --source xtoon365 --pages 5 --start-page 3  # Pages 3-7
  *   node crawler/run-crawl.js --list                       # List available parsers
- *   node crawler/run-crawl.js --source manhwaweb --manga-url https://manhwawebbackend-production.up.railway.app/manhwa/see/secret_class_1679631363177  # Single manga
+ *   node crawler/run-crawl.js --manga-url <url>            # Single manga — auto-detect parser
+ *   node crawler/run-crawl.js --manga-url https://manhwawebbackend-production.up.railway.app/manhwa/see/secret_class_1679631363177
+ *   node crawler/run-crawl.js --manga-url https://raw18.cloud/manga/<slug>
+ *   node crawler/run-crawl.js --manga-url https://jestful.net/hwms-<slug>.html
+ *   node crawler/run-crawl.js --manga-url https://t1.xtoon365.com/webtoon/<slug>
  */
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 
