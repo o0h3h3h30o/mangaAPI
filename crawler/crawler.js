@@ -460,6 +460,29 @@ async function processManga(item) {
             }
             console.log(`  [+] Parsed: "${info.name}", genres=[${info.genres.join(', ')}], status=${info.status}${info.caution ? ', 19+' : ''}`);
 
+            // Re-check by parsed name: homepage card name ("single"/localized) may differ
+            // from detail page name → avoid creating a duplicate manga.
+            if (info.name && info.name !== item.name) {
+                const byParsedName = await findMangaByName(info.name);
+                if (byParsedName) {
+                    console.log(`  [~] Name match (parsed): id=${byParsedName.id}, "${byParsedName.name}", chapter_1=${byParsedName.chapter_1}`);
+                    await appendSourceUrl(byParsedName.id, byParsedName.from_manga18fx, sourceUrl);
+
+                    console.log(`  [>] Fetching full chapter list...`);
+                    const allChapters = await siteParser.getFullChapterList(sourceUrl);
+
+                    const existingUrls = await getExistingChapterUrls(byParsedName.id);
+                    const newChapters = allChapters.filter(ch => !existingUrls.has(ch.url));
+                    console.log(`  [>] Found ${allChapters.length} total, ${newChapters.length} new`);
+
+                    const inserted = await insertChapters(byParsedName.id, newChapters, siteParser);
+                    if (inserted > 0) {
+                        await syncMangaTimeFromChapter(byParsedName.id);
+                    }
+                    return { status: 'linked', name: info.name, mangaId: byParsedName.id, inserted };
+                }
+            }
+
             const mangaId = await insertManga({
                 name: info.name || item.name,
                 slugName: info.slugName || item.name,
