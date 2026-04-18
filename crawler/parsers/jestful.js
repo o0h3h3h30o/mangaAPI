@@ -235,6 +235,52 @@ async function fetchChapterList(mangaSlug) {
     return res.text();
 }
 
+/**
+ * Parse relative time strings từ jestful: "14 minutes ago", "2 weeks ago", "1 months ago"...
+ * → Date object. Returns null nếu không parse được.
+ */
+function parseRelativeTime(text) {
+    if (!text) return null;
+    const str = text.toLowerCase().trim();
+
+    // "just now" / "a few seconds ago"
+    if (/^(just now|a few seconds? ago)$/.test(str)) {
+        return new Date();
+    }
+
+    // "a minute ago" / "an hour ago" / "a day ago"...
+    const aMatch = str.match(/^(?:a|an)\s+(second|minute|hour|day|week|month|year)s?\s+ago$/);
+    // "14 minutes ago" / "2 weeks ago" / "1 months ago"
+    const nMatch = str.match(/^(\d+)\s*(second|minute|hour|day|week|month|year)s?\s+ago$/);
+
+    const m = nMatch || aMatch;
+    if (!m) return null;
+
+    const n = nMatch ? parseInt(nMatch[1], 10) : 1;
+    const unit = (nMatch ? nMatch[2] : aMatch[1]);
+
+    const msPerUnit = {
+        second: 1000,
+        minute: 60 * 1000,
+        hour: 60 * 60 * 1000,
+        day: 24 * 60 * 60 * 1000,
+        week: 7 * 24 * 60 * 60 * 1000,
+        month: 30 * 24 * 60 * 60 * 1000,   // xấp xỉ
+        year: 365 * 24 * 60 * 60 * 1000,   // xấp xỉ
+    }[unit];
+
+    return new Date(Date.now() - n * msPerUnit);
+}
+
+/**
+ * Format Date → "YYYY-MM-DD HH:MM:SS" (MySQL DATETIME, local timezone)
+ */
+function formatMysqlDatetime(date) {
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
+           `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
 function parseChapterListResponse(html) {
     const $ = cheerio.load(html);
     const chapters = [];
@@ -249,11 +295,15 @@ function parseChapterListResponse(html) {
         const number = parseChapterNumber(chName);
         const timeText = $row.find('time').text().trim();
 
+        // Convert relative time ("2 weeks ago") → MySQL DATETIME
+        const dt = parseRelativeTime(timeText);
+        const createdAt = dt ? formatMysqlDatetime(dt) : null;
+
         if (number !== null) {
             chapters.push({
                 number,
                 url: buildFullUrl(href),
-                created_at: timeText || null,
+                created_at: createdAt,
             });
         }
     });
