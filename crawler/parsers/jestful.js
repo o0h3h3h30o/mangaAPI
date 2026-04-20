@@ -82,10 +82,20 @@ function parseHomepage(html) {
 }
 
 /**
- * Check if text contains Japanese characters (Kanji, Hiragana, Katakana)
+ * Strict Japanese check: MUST contain hiragana or katakana.
+ * These two syllabaries exist only in Japanese, so they distinguish
+ * JP from Chinese (which shares the CJK kanji range \u4e00-\u9faf).
  */
 function isJapanese(text) {
-    return /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\u4e00-\u9faf\u3400-\u4dbf]/.test(text);
+    return /[\u3040-\u309f\u30a0-\u30ff]/.test(text);
+}
+
+/**
+ * Weak fallback: contains any CJK ideograph (kanji) — could be Japanese
+ * or Chinese. Use only when no hiragana/katakana candidate exists.
+ */
+function hasCjkIdeograph(text) {
+    return /[\u4e00-\u9faf\u3400-\u4dbf]/.test(text);
 }
 
 /**
@@ -124,11 +134,16 @@ function extractMangaInfo(html) {
         }
     });
 
-    // Split other names and find Japanese name
+    // Split other names and find Japanese name.
+    // Priority:
+    //   1. Entry with hiragana/katakana → definitely Japanese
+    //   2. Entry with only CJK ideographs (kanji-only) → could be JP or CN,
+    //      used as weak fallback only if no stronger candidate exists
     const altNames = rawOtherNames
         ? rawOtherNames.split(/,\s*/).map(n => n.trim()).filter(Boolean)
         : [];
-    const jpName = altNames.find(n => isJapanese(n));
+    const jpName = altNames.find(isJapanese)
+                || altNames.find(hasCjkIdeograph);
 
     // name = Japanese portion extracted from JP entry, fallback to h3 title
     const mangaName = jpName ? extractJapanesePart(jpName) : h3Title;
