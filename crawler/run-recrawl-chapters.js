@@ -5,6 +5,8 @@
  * Usage:
  *   node crawler/run-recrawl-chapters.js --source xtoon365
  *   node crawler/run-recrawl-chapters.js --source raw18
+ *   node crawler/run-recrawl-chapters.js --source manhwaweb
+ *   node crawler/run-recrawl-chapters.js --source jestful
  *   node crawler/run-recrawl-chapters.js --source xtoon365 --manga-id 42
  *   node crawler/run-recrawl-chapters.js --source xtoon365 --limit 10
  */
@@ -36,14 +38,22 @@ async function main() {
     }
 
     const siteParser = getParserByName(sourceName);
-    const domainPattern = siteParser.baseUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
+
+    // Domain patterns for DB filter. Parsers may declare `urlPatterns` (e.g. raw18
+    // with multiple legacy domains, manhwaweb with a separate API host) — fall back
+    // to baseUrl if not provided.
+    const patterns = (siteParser.urlPatterns && siteParser.urlPatterns.length > 0)
+        ? siteParser.urlPatterns
+        : [siteParser.baseUrl.replace(/^https?:\/\//, '').replace(/\/$/, '')];
 
     console.log(`=== Re-crawl chapters: ${siteParser.name} ===`);
     console.log(`Time: ${new Date().toISOString()}\n`);
+    console.log(`Matching DB against: ${patterns.join(', ')}\n`);
 
-    // Query manga có source URL thuộc parser này
-    let query = 'SELECT id, name, slug, from_manga18fx FROM manga WHERE from_manga18fx LIKE ?';
-    const params = [`%${domainPattern}%`];
+    // Query manga có source URL thuộc parser này (OR LIKE cho từng pattern)
+    const whereLike = patterns.map(() => 'from_manga18fx LIKE ?').join(' OR ');
+    let query = `SELECT id, name, slug, from_manga18fx FROM manga WHERE (${whereLike})`;
+    const params = patterns.map(p => `%${p}%`);
 
     if (mangaId) {
         query += ' AND id = ?';

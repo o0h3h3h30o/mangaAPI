@@ -155,9 +155,13 @@ function formatChapterTitle(number) {
     return `Capítulo ${number}`;
 }
 
+// Domain fragments for SQL LIKE matching (used by run-recrawl-* scripts)
+const urlPatterns = ['manhwaweb.com', 'manhwawebbackend-production.up.railway.app'];
+
 module.exports = {
     name,
     baseUrl,
+    urlPatterns,
     match,
     getHomepageUrls,
     parseHomepage,

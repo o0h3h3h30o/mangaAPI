@@ -86,6 +86,8 @@ node crawler/run-crawl-chapters.js --output /path/to/chapter
 ```bash
 node crawler/run-recrawl-chapters.js --source xtoon365
 node crawler/run-recrawl-chapters.js --source raw18
+node crawler/run-recrawl-chapters.js --source manhwaweb
+node crawler/run-recrawl-chapters.js --source jestful
 node crawler/run-recrawl-chapters.js --source xtoon365 --manga-id 42
 node crawler/run-recrawl-chapters.js --source xtoon365 --limit 10
 ```
@@ -99,6 +101,7 @@ node crawler/run-recrawl-covers.js
 # Crawl theo source
 node crawler/run-recrawl-covers.js --source jestful
 node crawler/run-recrawl-covers.js --source raw18
+node crawler/run-recrawl-covers.js --source manhwaweb
 
 # Giới hạn + force
 node crawler/run-recrawl-covers.js --source jestful --limit 50

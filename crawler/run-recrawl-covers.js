@@ -6,7 +6,8 @@
  * Usage:
  *   node crawler/run-recrawl-covers.js                          # All xtoon365 (default)
  *   node crawler/run-recrawl-covers.js --source jestful         # All jestful
- *   node crawler/run-recrawl-covers.js --source raw18           # All raw18
+ *   node crawler/run-recrawl-covers.js --source raw18           # All raw18 (all domains)
+ *   node crawler/run-recrawl-covers.js --source manhwaweb       # All manhwaweb
  *   node crawler/run-recrawl-covers.js --source jestful --limit 50
  *   node crawler/run-recrawl-covers.js --id 123                 # Specific manga by DB id
  *   node crawler/run-recrawl-covers.js --force                  # Re-download even if files exist
@@ -62,22 +63,40 @@ const SOURCES = {
     },
     raw18: {
         label: 'raw18',
-        dbFilter: `(from_manga18fx LIKE '%raw18.info%' OR from_manga18fx LIKE '%raw18.link%' OR from_manga18fx LIKE '%raw18.rest%' OR from_manga18fx LIKE '%raw18.win%')`,
+        dbFilter: `(from_manga18fx LIKE '%raw18.info%' OR from_manga18fx LIKE '%raw18.link%' OR from_manga18fx LIKE '%raw18.rest%' OR from_manga18fx LIKE '%raw18.win%' OR from_manga18fx LIKE '%raw18.cloud%')`,
         extractUrl(fromManga18fx) {
             if (!fromManga18fx) return null;
             const parts = fromManga18fx.split(',').map(s => s.trim());
-            return parts.find(u => u.includes('raw18.info') || u.includes('raw18.link') || u.includes('raw18.rest') || u.includes('raw18.win')) || null;
+            return parts.find(u => /raw18\.(?:info|link|rest|win|cloud)/.test(u)) || null;
         },
         async fetchCoverUrl(sourceUrl) {
-            // Normalize old domains → raw18.win
-            const url = sourceUrl.replace(/raw18\.(?:info|link|rest)/, 'raw18.win');
-            const html = await fetchPage(url, 'https://raw18.win');
+            // Normalize legacy domains → raw18.cloud (current)
+            const url = sourceUrl.replace(/raw18\.(?:info|link|rest|win)/, 'raw18.cloud');
+            const html = await fetchPage(url, 'https://raw18.cloud');
             const $ = cheerio.load(html);
             const coverUrl = $('div.detail-info img[src*="admin.raw18"]').first().attr('src')
                 || $('div.col-image img[src]').first().attr('src')
                 || $('img[src*="admin.raw18"]').first().attr('src')
                 || null;
             return coverUrl ? coverUrl.trim() : null;
+        },
+    },
+    manhwaweb: {
+        label: 'manhwaweb',
+        dbFilter: `(from_manga18fx LIKE '%manhwaweb.com%' OR from_manga18fx LIKE '%manhwawebbackend-production.up.railway.app%')`,
+        extractUrl(fromManga18fx) {
+            if (!fromManga18fx) return null;
+            const parts = fromManga18fx.split(',').map(s => s.trim());
+            return parts.find(u => u.includes('manhwaweb.com') || u.includes('manhwawebbackend-production.up.railway.app')) || null;
+        },
+        async fetchCoverUrl(sourceUrl) {
+            // manhwaweb exposes a JSON detail API — cover is at data._imagen
+            const res = await fetch(sourceUrl, withProxy({
+                headers: { 'User-Agent': USER_AGENT, 'Referer': 'https://manhwaweb.com' },
+            }));
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            return data._imagen || null;
         },
     },
 };
