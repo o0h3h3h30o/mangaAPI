@@ -41,6 +41,7 @@ node crawler/run-crawl.js --source jestful
 node crawler/run-crawl.js --source raw18
 node crawler/run-crawl.js --source xtoon365
 node crawler/run-crawl.js --source manhwaweb
+node crawler/run-crawl.js --source comix      # Cần comix-sign.js thật để crawl chapter
 
 # Crawl nhiều pages hơn
 node crawler/run-crawl.js --source jestful --pages 5
@@ -60,7 +61,19 @@ node crawler/run-crawl.js --manga-url https://raw18.cloud/manga/<slug>
 node crawler/run-crawl.js --manga-url https://jestful.net/hwms-<slug>.html
 node crawler/run-crawl.js --manga-url https://t1.xtoon365.com/webtoon/<slug>
 node crawler/run-crawl.js --manga-url https://manhwawebbackend-production.up.railway.app/manhwa/see/<slug>
+node crawler/run-crawl.js --manga-url https://comix.to/api/v2/manga/<hash_id>
 ```
+
+### Lưu ý parser comix
+
+- Endpoint list (`/manga`) và detail (`/manga/{hash_id}`) của comix.to hoạt động
+  bình thường — metadata (tên, cover, genres, status, caution) crawl được.
+- Endpoint `/manga/{hash_id}/chapters` **yêu cầu signed URL** (comix.to dùng
+  HMAC ký request từ phía client). File `crawler/parsers/comix-sign.js` hiện
+  là stub — sẽ throw lỗi rõ ràng khi gọi. Muốn crawl chapter thì paste code
+  sign thật vào file đó (shape: `signUrl(path, params)` + `signedFetch(path, params, opts)`).
+- Endpoint `/chapters/{chapter_id}` (lấy ảnh) không cần sign — sau khi có
+  được chapter_id, `getPageImages` chạy bình thường.
 
 ## Crawl ảnh chapter
 
