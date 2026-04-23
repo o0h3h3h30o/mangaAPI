@@ -29,21 +29,15 @@ const DEMOGRAPHIC_IDS = {
     4: 'seinen',
 };
 
-// NSFW theme term_id → content rating severity.
-// Highest severity wins — escalates `caution` flag.
-const NSFW_RATING_MAP = {
-    87266: 'pornographic', // Hentai
-    87264: 'erotica',      // Adult
-    87267: 'erotica',      // Mature
-    87268: 'erotica',      // Smut
-    87265: 'suggestive',   // Ecchi
-};
-const RATING_SEVERITY = {
-    safe: 0,
-    suggestive: 1,
-    erotica: 2,
-    pornographic: 3,
-};
+// NSFW theme term_ids — presence in term_ids escalates `caution = true`.
+// (Project DB only has a boolean `caution` flag, no severity scale.)
+const NSFW_TERM_IDS = new Set([
+    87264, // Adult
+    87265, // Ecchi
+    87266, // Hentai
+    87267, // Mature
+    87268, // Smut
+]);
 
 // term_id → genre name
 const GENRE_IDS = {
@@ -78,30 +72,26 @@ const THEME_IDS = {
 };
 
 /**
- * Resolve an array of term_ids into grouped labels + escalated content rating.
+ * Resolve an array of term_ids into the fields the project DB stores:
+ *   - genres → category table
+ *   - tags   → tag table (themes merged here — DB has no separate "theme")
+ *   - nsfw   → boolean, escalates `caution` if any NSFW term_id is present
+ *
+ * Demographic labels (shoujo/shounen/…) and multi-level content ratings
+ * from comix-import.ts are dropped — the project DB has no columns for
+ * them.
  */
 function resolveTermIds(termIds) {
     const genres = [];
-    const themes = [];
-    let demographic = null;
-    let maxSeverity = 0;
-    let contentRating = 'safe';
+    const tags = [];
+    let nsfw = false;
 
     for (const id of termIds || []) {
-        if (DEMOGRAPHIC_IDS[id]) {
-            demographic = DEMOGRAPHIC_IDS[id];
-            continue;
-        }
         if (GENRE_IDS[id]) genres.push(GENRE_IDS[id]);
-        else if (THEME_IDS[id]) themes.push(THEME_IDS[id]);
-
-        const rating = NSFW_RATING_MAP[id];
-        if (rating && RATING_SEVERITY[rating] > maxSeverity) {
-            maxSeverity = RATING_SEVERITY[rating];
-            contentRating = rating;
-        }
+        else if (THEME_IDS[id]) tags.push(THEME_IDS[id]);
+        if (NSFW_TERM_IDS.has(id)) nsfw = true;
     }
-    return { genres, themes, demographic, contentRating };
+    return { genres, tags, nsfw };
 }
 
 // ─── Parser Interface ──────────────────────────────────────────────
@@ -159,9 +149,6 @@ function parseHomepage(jsonStr) {
             coverUrl,
             chapters: [],
             latestChapterNum: parseFloat(item.latest_chapter || item.final_chapter || 0) || 0,
-            // Extra metadata the default crawler ignores but recrawl scripts may use
-            hashId,
-            hasChapters: !!item.has_chapters,
         });
     }
 
@@ -169,7 +156,12 @@ function parseHomepage(jsonStr) {
 }
 
 /**
- * Parse /manga/{hash} detail JSON → info shape used by crawler.insertManga.
+ * Parse /manga/{hash} detail JSON → info shape consumed by insertManga.
+ *
+ * Returned keys match exactly the fields insertManga reads:
+ *   name, slugName, description, otherNames, coverUrl,
+ *   genres (→ category), tags (→ tag), authors, artists,
+ *   status, tipo, caution, skip
  */
 function extractMangaInfo(jsonStr) {
     const data = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr;
@@ -181,29 +173,15 @@ function extractMangaInfo(jsonStr) {
 
     const coverUrl = m.poster?.large || m.poster?.medium || m.poster?.small || '';
 
-    const { genres, themes, demographic, contentRating } = resolveTermIds(m.term_ids || []);
+    const { genres, tags, nsfw } = resolveTermIds(m.term_ids || []);
 
-    // `caution` is true when rating is erotica or worse, or when API flags is_nsfw.
-    const ratingSeverity = RATING_SEVERITY[contentRating] || 0;
-    const caution = !!m.is_nsfw || ratingSeverity >= RATING_SEVERITY.erotica;
+    // comix.to `status` → internal status column
+    const status = m.status === 'finished' ? 'completed' : 'ongoing';
 
-    // Map API status → internal
-    let status = 'ongoing';
-    if (m.status === 'finished') status = 'completed';
-
-    // Type: manhwa / manhua / doujinshi → pass-through, 'other' → 'manga'
-    let tipo;
-    if (m.type === 'manhwa' || m.type === 'manhua' || m.type === 'doujinshi') tipo = m.type;
-    else tipo = 'manga';
-
-    // comix.to doesn't surface authors/artists in these endpoints — leave empty.
-    // When/if they appear under m.authors or m.artists, extract here.
-    const authors = [];
-
-    // Merge themes into genres for DB (crawler stores one flat list).
-    // Demographic label also appended so it becomes a browsable category.
-    const allGenres = [...genres, ...themes];
-    if (demographic) allGenres.push(demographic.charAt(0).toUpperCase() + demographic.slice(1));
+    // Type: manhwa/manhua/doujinshi pass through, anything else → 'manga'
+    const tipo = (m.type === 'manhwa' || m.type === 'manhua' || m.type === 'doujinshi')
+        ? m.type
+        : 'manga';
 
     return {
         skip: !title,
@@ -211,12 +189,14 @@ function extractMangaInfo(jsonStr) {
         slugName: m.slug || title,
         coverUrl,
         otherNames,
-        genres: allGenres,
+        genres,
+        tags,
+        authors: [],   // comix.to doesn't expose authors on these endpoints
+        artists: [],   // same for artists
         status,
-        authors,
-        description: m.synopsis || '',
-        caution,
         tipo,
+        caution: !!m.is_nsfw || nsfw,
+        description: m.synopsis || '',
     };
 }
 
