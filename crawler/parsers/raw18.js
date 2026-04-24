@@ -1,5 +1,5 @@
 /**
- * Parser for raw18.info (Japanese manga - フルカラー/Full-color)
+ * Parser for raw18.men (Japanese manga - フルカラー/Full-color)
  *
  * NOTE: Site thường xuyên đổi tên miền.
  *       Luôn dùng --source raw18 để chỉ định parser này.
@@ -27,7 +27,7 @@ const cheerio = require('cheerio');
 const { withProxy } = require('../proxy');
 const { USER_AGENT } = require('./base');
 
-const BASE_URL = 'https://raw18.cloud';
+const BASE_URL = 'https://raw18.men';
 const DEFAULT_PAGES = 3;
 
 // フルカラー genre (URL-encoded)
@@ -42,7 +42,7 @@ const baseUrl = BASE_URL;
  * Match URLs belonging to raw18 (update this if domain changes)
  */
 function match(url) {
-    return url.includes('raw18.info') || url.includes('raw18.link') || url.includes('raw18.rest') || url.includes('raw18.win') || url.includes('raw18.cloud');
+    return url.includes('raw18.info') || url.includes('raw18.link') || url.includes('raw18.rest') || url.includes('raw18.win') || url.includes('raw18.cloud') || url.includes('raw18.men');
 }
 
 /**
@@ -227,7 +227,7 @@ async function getFullChapterList(mangaSourceUrl) {
  *
  * Images are inside div.reading-detail and loaded directly (no JS lazy load).
  * CDN: zr8photomg.online (may change with domain)
- * Filter: exclude logo/UI images from raw18.info domain.
+ * Filter: exclude logo/UI images from raw18 domains.
  */
 async function getPageImages(chapterUrl) {
     // Referer = manga detail page (strip chapter suffix)
@@ -241,7 +241,7 @@ async function getPageImages(chapterUrl) {
         const src = $(el).attr('src') || $(el).attr('data-original') || '';
         if (!src) return;
         // Exclude site's own logo/UI assets
-        if (src.includes('raw18.info') || src.includes('raw18.link') || src.includes('raw18.rest') || src.includes('raw18.win') || src.includes('raw18.cloud')) return;
+        if (src.includes('raw18.info') || src.includes('raw18.link') || src.includes('raw18.rest') || src.includes('raw18.win') || src.includes('raw18.cloud') || src.includes('raw18.men')) return;
         images.push(src);
     });
 
@@ -252,11 +252,11 @@ async function getPageImages(chapterUrl) {
 
 /**
  * Normalize URL: replace old domain with current BASE_URL
- * raw18.info / raw18.link / raw18.rest / raw18.win → raw18.cloud (transparent to DB stored URLs)
+ * Normalize any legacy raw18 domain to the current raw18.men.
  */
 function normalizeUrl(url) {
     if (!url) return url;
-    return url.replace(/https?:\/\/(?:www\.)?raw18\.(?:info|link|rest|win)/, BASE_URL);
+    return url.replace(/https?:\/\/(?:www\.)?raw18\.(?:info|link|rest|win|cloud|men)/, BASE_URL);
 }
 
 /**
@@ -304,7 +304,7 @@ function buildFullUrl(path) {
 
 // All known raw18 domains (current + legacy) — used by run-recrawl-* scripts
 // to find manga whose from_manga18fx was stored under any of these domains.
-const urlPatterns = ['raw18.cloud', 'raw18.win', 'raw18.info', 'raw18.link', 'raw18.rest'];
+const urlPatterns = ['raw18.men', 'raw18.cloud', 'raw18.win', 'raw18.info', 'raw18.link', 'raw18.rest'];
 
 module.exports = {
     name,

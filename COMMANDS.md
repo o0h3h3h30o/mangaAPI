@@ -57,7 +57,7 @@ node crawler/run-crawl.js --dry-run
 node crawler/run-crawl.js --list
 
 # Crawl 1 manga theo URL — parser được tự phát hiện từ URL
-node crawler/run-crawl.js --manga-url https://raw18.cloud/manga/<slug>
+node crawler/run-crawl.js --manga-url https://raw18.men/manga/<slug>
 node crawler/run-crawl.js --manga-url https://jestful.net/hwms-<slug>.html
 node crawler/run-crawl.js --manga-url https://t1.xtoon365.com/webtoon/<slug>
 node crawler/run-crawl.js --manga-url https://manhwawebbackend-production.up.railway.app/manhwa/see/<slug>

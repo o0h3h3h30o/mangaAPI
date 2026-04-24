@@ -14,7 +14,7 @@
  *   node crawler/run-crawl.js --list                       # List available parsers
  *   node crawler/run-crawl.js --manga-url <url>            # Single manga — auto-detect parser
  *   node crawler/run-crawl.js --manga-url https://manhwawebbackend-production.up.railway.app/manhwa/see/secret_class_1679631363177
- *   node crawler/run-crawl.js --manga-url https://raw18.cloud/manga/<slug>
+ *   node crawler/run-crawl.js --manga-url https://raw18.men/manga/<slug>
  *   node crawler/run-crawl.js --manga-url https://jestful.net/hwms-<slug>.html
  *   node crawler/run-crawl.js --manga-url https://t1.xtoon365.com/webtoon/<slug>
  */

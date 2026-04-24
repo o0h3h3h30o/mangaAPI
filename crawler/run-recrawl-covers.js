@@ -63,16 +63,16 @@ const SOURCES = {
     },
     raw18: {
         label: 'raw18',
-        dbFilter: `(from_manga18fx LIKE '%raw18.info%' OR from_manga18fx LIKE '%raw18.link%' OR from_manga18fx LIKE '%raw18.rest%' OR from_manga18fx LIKE '%raw18.win%' OR from_manga18fx LIKE '%raw18.cloud%')`,
+        dbFilter: `(from_manga18fx LIKE '%raw18.info%' OR from_manga18fx LIKE '%raw18.link%' OR from_manga18fx LIKE '%raw18.rest%' OR from_manga18fx LIKE '%raw18.win%' OR from_manga18fx LIKE '%raw18.cloud%' OR from_manga18fx LIKE '%raw18.men%')`,
         extractUrl(fromManga18fx) {
             if (!fromManga18fx) return null;
             const parts = fromManga18fx.split(',').map(s => s.trim());
-            return parts.find(u => /raw18\.(?:info|link|rest|win|cloud)/.test(u)) || null;
+            return parts.find(u => /raw18\.(?:info|link|rest|win|cloud|men)/.test(u)) || null;
         },
         async fetchCoverUrl(sourceUrl) {
-            // Normalize legacy domains → raw18.cloud (current)
-            const url = sourceUrl.replace(/raw18\.(?:info|link|rest|win)/, 'raw18.cloud');
-            const html = await fetchPage(url, 'https://raw18.cloud');
+            // Normalize legacy domains → raw18.men (current)
+            const url = sourceUrl.replace(/raw18\.(?:info|link|rest|win|cloud|men)/, 'raw18.men');
+            const html = await fetchPage(url, 'https://raw18.men');
             const $ = cheerio.load(html);
             const coverUrl = $('div.detail-info img[src*="admin.raw18"]').first().attr('src')
                 || $('div.col-image img[src]').first().attr('src')
