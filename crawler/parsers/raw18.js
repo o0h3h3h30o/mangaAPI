@@ -27,7 +27,7 @@ const cheerio = require('cheerio');
 const { withProxy } = require('../proxy');
 const { USER_AGENT } = require('./base');
 
-const BASE_URL = 'https://raw18.men';
+const BASE_URL = 'https://raw18.lol';
 const DEFAULT_PAGES = 3;
 
 // フルカラー genre (URL-encoded)
@@ -42,7 +42,7 @@ const baseUrl = BASE_URL;
  * Match URLs belonging to raw18 (update this if domain changes)
  */
 function match(url) {
-    return url.includes('raw18.info') || url.includes('raw18.link') || url.includes('raw18.rest') || url.includes('raw18.win') || url.includes('raw18.cloud') || url.includes('raw18.men');
+    return url.includes('raw18.info') || url.includes('raw18.link') || url.includes('raw18.rest') || url.includes('raw18.win') || url.includes('raw18.cloud') || url.includes('raw18.men') || url.includes('raw18.lol');
 }
 
 /**
@@ -241,7 +241,7 @@ async function getPageImages(chapterUrl) {
         const src = $(el).attr('src') || $(el).attr('data-original') || '';
         if (!src) return;
         // Exclude site's own logo/UI assets
-        if (src.includes('raw18.info') || src.includes('raw18.link') || src.includes('raw18.rest') || src.includes('raw18.win') || src.includes('raw18.cloud') || src.includes('raw18.men')) return;
+        if (src.includes('raw18.info') || src.includes('raw18.link') || src.includes('raw18.rest') || src.includes('raw18.win') || src.includes('raw18.cloud') || src.includes('raw18.men') || src.includes('raw18.lol')) return;
         images.push(src);
     });
 
@@ -252,11 +252,11 @@ async function getPageImages(chapterUrl) {
 
 /**
  * Normalize URL: replace old domain with current BASE_URL
- * Normalize any legacy raw18 domain to the current raw18.men.
+ * Normalize any legacy raw18 domain to the current raw18.lol.
  */
 function normalizeUrl(url) {
     if (!url) return url;
-    return url.replace(/https?:\/\/(?:www\.)?raw18\.(?:info|link|rest|win|cloud|men)/, BASE_URL);
+    return url.replace(/https?:\/\/(?:www\.)?raw18\.(?:info|link|rest|win|cloud|men|lol)/, BASE_URL);
 }
 
 /**
