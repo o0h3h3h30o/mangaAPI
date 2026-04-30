@@ -50,12 +50,43 @@ async function getMaxChapterNumber(mangaId) {
 /**
  * Get all existing chapter numbers for a manga (as Set of floats)
  */
+/**
+ * Returns a Set of existing chapter numbers for a manga, normalized to a
+ * canonical "X.YY" string so that float precision and DECIMAL(10,2)
+ * round-trips line up reliably with the unique key on (manga_id, number).
+ */
 async function getExistingChapterNumbers(mangaId) {
     const [rows] = await db.query(
         'SELECT number as num FROM chapter WHERE manga_id = ?',
         [mangaId]
     );
-    return new Set(rows.map(r => Number(r.num)));
+    return new Set(rows.map(r => normalizeChapterNumber(r.num)));
+}
+
+/**
+ * Returns a Set of existing chapter slugs for a manga — used as a safety
+ * net for the unique constraint that may exist on slug as well.
+ */
+async function getExistingChapterSlugs(mangaId) {
+    const [rows] = await db.query(
+        'SELECT slug FROM chapter WHERE manga_id = ? AND slug IS NOT NULL AND slug != ""',
+        [mangaId]
+    );
+    return new Set(rows.map(r => r.slug));
+}
+
+/**
+ * Normalize chapter number to canonical "X.YY" string. Handles:
+ *   - mysql2 returning DECIMAL as string ("134.50")
+ *   - parser returning float (134.5)
+ *   - parser returning integer (134)
+ *   - float precision noise (134.50000001 → "134.50")
+ */
+function normalizeChapterNumber(value) {
+    if (value === null || value === undefined) return '';
+    const n = Number(value);
+    if (!Number.isFinite(n)) return String(value);
+    return n.toFixed(2);  // matches DECIMAL(10,2) precision
 }
 
 /**
@@ -271,12 +302,18 @@ async function appendSourceUrl(mangaId, currentValue, newSourceUrl) {
 async function insertChapters(mangaId, chapters, siteParser = null) {
     if (chapters.length === 0) return 0;
 
-    // Safety: filter out chapters whose source_url or number already exists in DB
+    // Safety filter: drop chapters whose source_url, number, or slug is
+    // already in DB. The DB has a unique constraint on (manga_id, number)
+    // and INSERT IGNORE silently skips conflicts — without these filters
+    // the affectedRows count is misleading.
     const existingUrls = await getExistingChapterUrls(mangaId);
     const existingNums = await getExistingChapterNumbers(mangaId);
+    const existingSlugs = await getExistingChapterSlugs(mangaId);
     const filtered = chapters.filter(ch => {
         if (ch.url && existingUrls.has(ch.url)) return false;
-        if (existingNums.has(ch.number)) return false;
+        if (existingNums.has(normalizeChapterNumber(ch.number))) return false;
+        const slug = base.generateChapterSlug(ch.number);
+        if (existingSlugs.has(slug)) return false;
         return true;
     });
     if (filtered.length === 0) {
@@ -321,7 +358,13 @@ async function insertChapters(mangaId, chapters, siteParser = null) {
         flat
     );
 
-    console.log(`  [+] Inserted ${result.affectedRows} chapters for manga id=${mangaId}`);
+    console.log(`  [+] Inserted ${result.affectedRows}/${filtered.length} chapters for manga id=${mangaId}`);
+    if (result.affectedRows < filtered.length) {
+        // INSERT IGNORE swallowed unique-key violations the JS filter
+        // didn't catch. Surface the offending numbers so we can debug.
+        const numbers = filtered.map(c => c.number).join(', ');
+        console.log(`  [~] DB silently dropped ${filtered.length - result.affectedRows} (likely unique on number/slug). Attempted: ${numbers}`);
+    }
     return result.affectedRows;
 }
 

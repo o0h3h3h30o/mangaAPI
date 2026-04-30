@@ -304,7 +304,7 @@ function buildFullUrl(path) {
 
 // All known raw18 domains (current + legacy) — used by run-recrawl-* scripts
 // to find manga whose from_manga18fx was stored under any of these domains.
-const urlPatterns = ['raw18.men', 'raw18.cloud', 'raw18.win', 'raw18.info', 'raw18.link', 'raw18.rest'];
+const urlPatterns = ['raw18.lol', 'raw18.men', 'raw18.cloud', 'raw18.win', 'raw18.info', 'raw18.link', 'raw18.rest'];
 
 module.exports = {
     name,
