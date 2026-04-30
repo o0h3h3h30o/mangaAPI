@@ -12,6 +12,7 @@
  *   node crawler/run-crawl.js --source xtoon365 --url https://t1.xtoon365.com/category/theme/302/finish/1  # Custom URL
  *   node crawler/run-crawl.js --source xtoon365 --pages 5 --start-page 3  # Pages 3-7
  *   node crawler/run-crawl.js --list                       # List available parsers
+ *   node crawler/run-crawl.js --source raw18 --limit 1     # Process only 1 manga then exit (debug)
  *   node crawler/run-crawl.js --manga-url <url>            # Single manga — auto-detect parser
  *   node crawler/run-crawl.js --manga-url https://manhwawebbackend-production.up.railway.app/manhwa/see/secret_class_1679631363177
  *   node crawler/run-crawl.js --manga-url https://raw18.men/manga/<slug>
@@ -41,6 +42,7 @@ function parseArgs() {
     const urlIdx = args.indexOf('--url');
     const startPageIdx = args.indexOf('--start-page');
     const mangaUrlIdx = args.indexOf('--manga-url');
+    const limitIdx = args.indexOf('--limit');
     return {
         isDryRun: args.includes('--dry-run'),
         isList: args.includes('--list'),
@@ -49,11 +51,12 @@ function parseArgs() {
         url: urlIdx !== -1 ? args[urlIdx + 1] : undefined,
         startPage: startPageIdx !== -1 ? parseInt(args[startPageIdx + 1], 10) : undefined,
         mangaUrl: mangaUrlIdx !== -1 ? args[mangaUrlIdx + 1] : undefined,
+        limit: limitIdx !== -1 ? parseInt(args[limitIdx + 1], 10) : undefined,
     };
 }
 
 async function main() {
-    const { isDryRun, isList, sourceName, pages, url, startPage, mangaUrl } = parseArgs();
+    const { isDryRun, isList, sourceName, pages, url, startPage, mangaUrl, limit } = parseArgs();
 
     // --list: show available parsers
     if (isList) {
@@ -121,9 +124,9 @@ async function main() {
     // Normal crawl
     try {
         if (sourceName) {
-            await crawlSite(sourceName, { pages, url, startPage });
+            await crawlSite(sourceName, { pages, url, startPage, limit });
         } else {
-            await crawlAll({ pages });
+            await crawlAll({ pages, limit });
         }
         await flushApiCache();
     } catch (err) {

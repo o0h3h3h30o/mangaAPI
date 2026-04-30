@@ -624,13 +624,23 @@ async function crawlSite(parserName, options = {}) {
 
     const results = { skipped: 0, updated: 0, created: 0, linked: 0, errors: 0 };
 
+    // --limit N: stop after processing N manga total. Useful for debugging
+    // a single problematic manga without crawling the whole homepage.
+    const limit = Number.isFinite(options.limit) && options.limit > 0
+        ? options.limit
+        : null;
+    let processed = 0;
+
+    pageLoop:
     for (let i = 0; i < urls.length; i++) {
         console.log(`[Page ${i + 1}/${urls.length}] ${urls[i]}`);
         const html = await base.fetchPage(urls[i]);
-        const pageItems = siteParser.parseHomepage(html);
+        let pageItems = siteParser.parseHomepage(html);
         console.log(`  Found ${pageItems.length} manga\n`);
 
-        const CONCURRENCY = 2;
+        if (limit !== null) pageItems = pageItems.slice(0, limit - processed);
+
+        const CONCURRENCY = limit === 1 ? 1 : 2;
         for (let j = 0; j < pageItems.length; j += CONCURRENCY) {
             const batch = pageItems.slice(j, j + CONCURRENCY);
             await Promise.all(batch.map(async (item) => {
@@ -642,6 +652,11 @@ async function crawlSite(parserName, options = {}) {
                     results.errors++;
                 }
             }));
+            processed += batch.length;
+            if (limit !== null && processed >= limit) {
+                console.log(`  [stop] reached --limit ${limit}, exiting`);
+                break pageLoop;
+            }
         }
 
         console.log(`  [Page ${i + 1} done] Created: ${results.created}, Updated: ${results.updated}, Errors: ${results.errors}\n`);
