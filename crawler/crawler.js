@@ -375,10 +375,26 @@ async function insertChapters(mangaId, chapters, siteParser = null) {
 
     console.log(`  [+] Inserted ${result.affectedRows}/${filtered.length} chapters for manga id=${mangaId}`);
     if (result.affectedRows < filtered.length) {
-        // INSERT IGNORE swallowed unique-key violations the JS filter
-        // didn't catch. Surface the offending numbers so we can debug.
-        const numbers = filtered.map(c => c.number).join(', ');
-        console.log(`  [~] DB silently dropped ${filtered.length - result.affectedRows} (likely unique on number/slug). Attempted: ${numbers}`);
+        // INSERT IGNORE turned errors into warnings. Pull them so we know
+        // *exactly* what MySQL didn't like (unique key, FK, NOT NULL,
+        // truncation, bad date, …).
+        let warningRows = [];
+        try {
+            const [warns] = await db.query('SHOW WARNINGS');
+            warningRows = warns || [];
+        } catch (e) {
+            // Some hosts strip SHOW WARNINGS — non-fatal.
+        }
+
+        console.log(`  [~] DB silently dropped ${filtered.length - result.affectedRows} chapters`);
+        for (const ch of filtered) {
+            console.log(
+                `       attempted: number=${ch.number}, slug="${base.generateChapterSlug(ch.number)}", url="${(ch.url || '').slice(0, 80)}"`
+            );
+        }
+        for (const w of warningRows.slice(0, 5)) {
+            console.log(`       MySQL ${w.Level}: [${w.Code}] ${w.Message}`);
+        }
     }
     return result.affectedRows;
 }
