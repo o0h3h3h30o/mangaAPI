@@ -387,11 +387,29 @@ async function insertChapters(mangaId, chapters, siteParser = null) {
         }
 
         console.log(`  [~] DB silently dropped ${filtered.length - result.affectedRows} chapters`);
+        // Show the row we tried to insert AND verify whether DB already has
+        // it under the same (manga_id, number/slug) — if it does, the JS
+        // filter missed the dedup; if not, we're hitting a *different*
+        // constraint and the SHOW WARNINGS output explains why.
         for (const ch of filtered) {
+            const slug = base.generateChapterSlug(ch.number);
+            const normNum = normalizeChapterNumber(ch.number);
+            const inSet = existingNums.has(normNum);
+            const slugInSet = existingSlugs.has(slug);
+            // Re-query DB directly for this exact (manga_id, number) to be sure
+            const [dbHit] = await db.query(
+                'SELECT id, number, slug, source_url, is_show FROM chapter WHERE manga_id = ? AND number = ? LIMIT 1',
+                [mangaId, ch.number]
+            );
             console.log(
-                `       attempted: number=${ch.number}, slug="${base.generateChapterSlug(ch.number)}", url="${(ch.url || '').slice(0, 80)}"`
+                `       attempted: number=${ch.number} (norm="${normNum}"), ` +
+                `slug="${slug}", url="${(ch.url || '').slice(0, 80)}", ` +
+                `inExistingNums=${inSet}, inExistingSlugs=${slugInSet}, dbRow=${dbHit?.[0] ? JSON.stringify(dbHit[0]) : 'none'}`
             );
         }
+        // Sample of existingNums set so we can eyeball normalisation
+        const sampleNums = [...existingNums].slice(-5);
+        console.log(`       existingNums tail (last 5): ${JSON.stringify(sampleNums)}`);
         for (const w of warningRows.slice(0, 5)) {
             console.log(`       MySQL ${w.Level}: [${w.Code}] ${w.Message}`);
         }
