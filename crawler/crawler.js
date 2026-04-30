@@ -324,19 +324,34 @@ async function insertChapters(mangaId, chapters, siteParser = null) {
         console.log(`  [~] Filtered out ${chapters.length - filtered.length} duplicate chapters`);
     }
 
-    // Append current time (HH:MM:SS) to date-only strings like "2026-01-01"
-    const appendCurrentTime = (dateStr) => {
-        if (!dateStr) return new Date().toISOString();
+    // Normalize chapter timestamp into MySQL DATETIME format
+    // ("YYYY-MM-DD HH:MM:SS"). Anything else — including JS Date.toISOString()
+    // ("2026-04-30T12:34:56.789Z") — is rejected silently by MySQL when
+    // sql_mode includes STRICT_TRANS_TABLES, which makes INSERT IGNORE drop
+    // the row without surfacing an error.
+    const toMysqlDatetime = (dateStr) => {
+        const pad = (n) => String(n).padStart(2, '0');
+        const fmt = (d) =>
+            `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
+            `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+
+        if (!dateStr) return fmt(new Date());
         if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-            const now = new Date();
-            const time = now.toTimeString().slice(0, 8); // "12:39:00"
-            return `${dateStr} ${time}`;
+            // date-only "2026-01-01" → append current local time
+            return `${dateStr} ${new Date().toTimeString().slice(0, 8)}`;
         }
-        return dateStr;
+        if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(dateStr)) {
+            return dateStr; // already MySQL-formatted
+        }
+        // ISO 8601 ("...T...Z") or other formats Date can parse → reformat
+        const d = new Date(dateStr);
+        if (!Number.isNaN(d.getTime())) return fmt(d);
+        // Last-ditch fallback: now() rather than risk silent drop
+        return fmt(new Date());
     };
 
     const values = filtered.map(ch => {
-        const ts = appendCurrentTime(ch.created_at);
+        const ts = toMysqlDatetime(ch.created_at);
         return [
             mangaId,
             ch.title || (siteParser.formatChapterTitle ? siteParser.formatChapterTitle(ch.number) : `第${ch.number}話`),
