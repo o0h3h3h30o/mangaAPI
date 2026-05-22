@@ -61,26 +61,31 @@ const SOURCES = {
             return `https://jestful.net/${rawUrl.replace(/^\//, '')}`;
         },
     },
-    raw18: {
-        label: 'raw18',
-        dbFilter: `(from_manga18fx LIKE '%raw18.info%' OR from_manga18fx LIKE '%raw18.link%' OR from_manga18fx LIKE '%raw18.rest%' OR from_manga18fx LIKE '%raw18.win%' OR from_manga18fx LIKE '%raw18.cloud%' OR from_manga18fx LIKE '%raw18.men%')`,
-        extractUrl(fromManga18fx) {
-            if (!fromManga18fx) return null;
-            const parts = fromManga18fx.split(',').map(s => s.trim());
-            return parts.find(u => /raw18\.(?:info|link|rest|win|cloud|men)/.test(u)) || null;
-        },
-        async fetchCoverUrl(sourceUrl) {
-            // Normalize legacy domains → raw18.men (current)
-            const url = sourceUrl.replace(/raw18\.(?:info|link|rest|win|cloud|men)/, 'raw18.men');
-            const html = await fetchPage(url, 'https://raw18.men');
-            const $ = cheerio.load(html);
-            const coverUrl = $('div.detail-info img[src*="admin.raw18"]').first().attr('src')
-                || $('div.col-image img[src]').first().attr('src')
-                || $('img[src*="admin.raw18"]').first().attr('src')
-                || null;
-            return coverUrl ? coverUrl.trim() : null;
-        },
-    },
+    raw18: (() => {
+        const raw18Parser = require('./parsers/raw18');
+        const domains = raw18Parser.urlPatterns; // auto-derived from parser
+        const currentDomain = raw18Parser.baseUrl.replace('https://', '');
+        const domainRegex = new RegExp('raw18\\.(?:' + domains.map(d => d.replace('raw18.', '')).join('|') + ')');
+        return {
+            label: 'raw18',
+            dbFilter: '(' + domains.map(d => `from_manga18fx LIKE '%${d}%'`).join(' OR ') + ')',
+            extractUrl(fromManga18fx) {
+                if (!fromManga18fx) return null;
+                const parts = fromManga18fx.split(',').map(s => s.trim());
+                return parts.find(u => domainRegex.test(u)) || null;
+            },
+            async fetchCoverUrl(sourceUrl) {
+                const url = sourceUrl.replace(domainRegex, currentDomain);
+                const html = await fetchPage(url, `https://${currentDomain}`);
+                const $ = cheerio.load(html);
+                const coverUrl = $('div.detail-info img[src*="admin.raw18"]').first().attr('src')
+                    || $('div.col-image img[src]').first().attr('src')
+                    || $('img[src*="admin.raw18"]').first().attr('src')
+                    || null;
+                return coverUrl ? coverUrl.trim() : null;
+            },
+        };
+    })(),
     manhwaweb: {
         label: 'manhwaweb',
         dbFilter: `(from_manga18fx LIKE '%manhwaweb.com%' OR from_manga18fx LIKE '%manhwawebbackend-production.up.railway.app%')`,

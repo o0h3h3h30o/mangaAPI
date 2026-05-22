@@ -1,5 +1,5 @@
 /**
- * Parser for raw18.men (Japanese manga - フルカラー/Full-color)
+ * Parser for raw18.cam (Japanese manga - フルカラー/Full-color)
  *
  * NOTE: Site thường xuyên đổi tên miền.
  *       Luôn dùng --source raw18 để chỉ định parser này.
@@ -27,7 +27,20 @@ const cheerio = require('cheerio');
 const { withProxy } = require('../proxy');
 const { USER_AGENT } = require('./base');
 
-const BASE_URL = 'https://raw18.lol';
+const CURRENT_DOMAIN = 'raw18.cam';
+const BASE_URL = `https://${CURRENT_DOMAIN}`;
+
+// All legacy domains (add old domain here when CURRENT_DOMAIN changes)
+const LEGACY_DOMAINS = ['raw18.info', 'raw18.link', 'raw18.rest', 'raw18.win', 'raw18.cloud', 'raw18.men', 'raw18.lol', 'raw18.pics'];
+
+// Current + legacy — single source of truth for all domain checks
+const ALL_DOMAINS = [CURRENT_DOMAIN, ...LEGACY_DOMAINS];
+
+// Regex matching any raw18 domain (auto-generated from ALL_DOMAINS)
+const DOMAIN_REGEX = new RegExp(
+    'https?:\\/\\/(?:www\\.)?' + 'raw18\\.(?:' + ALL_DOMAINS.map(d => d.replace('raw18.', '')).join('|') + ')'
+);
+
 const DEFAULT_PAGES = 3;
 
 // フルカラー genre (URL-encoded)
@@ -39,10 +52,10 @@ const name = 'raw18';
 const baseUrl = BASE_URL;
 
 /**
- * Match URLs belonging to raw18 (update this if domain changes)
+ * Match URLs belonging to raw18 (auto-derived from ALL_DOMAINS)
  */
 function match(url) {
-    return url.includes('raw18.info') || url.includes('raw18.link') || url.includes('raw18.rest') || url.includes('raw18.win') || url.includes('raw18.cloud') || url.includes('raw18.men') || url.includes('raw18.lol') || url.includes('raw18.pics');
+    return ALL_DOMAINS.some(d => url.includes(d));
 }
 
 /**
@@ -240,8 +253,8 @@ async function getPageImages(chapterUrl) {
     $('div.reading-detail img').each((_, el) => {
         const src = $(el).attr('src') || $(el).attr('data-original') || '';
         if (!src) return;
-        // Exclude site's own logo/UI assets
-        if (src.includes('raw18.info') || src.includes('raw18.link') || src.includes('raw18.rest') || src.includes('raw18.win') || src.includes('raw18.cloud') || src.includes('raw18.men') || src.includes('raw18.lol') || src.includes('raw18.pics')) return;
+        // Exclude site's own logo/UI assets (auto-derived from ALL_DOMAINS)
+        if (ALL_DOMAINS.some(d => src.includes(d))) return;
         images.push(src);
     });
 
@@ -251,12 +264,11 @@ async function getPageImages(chapterUrl) {
 // --------------- Internal Helpers ---------------
 
 /**
- * Normalize URL: replace old domain with current BASE_URL
- * Normalize any legacy raw18 domain to the current raw18.lol.
+ * Normalize URL: replace any legacy raw18 domain with current BASE_URL (auto-derived)
  */
 function normalizeUrl(url) {
     if (!url) return url;
-    return url.replace(/https?:\/\/(?:www\.)?raw18\.(?:info|link|rest|win|cloud|men|lol|pics)/, BASE_URL);
+    return url.replace(DOMAIN_REGEX, BASE_URL);
 }
 
 /**
@@ -302,9 +314,9 @@ function buildFullUrl(path) {
 
 // --------------- Export ---------------
 
-// All known raw18 domains (current + legacy) — used by run-recrawl-* scripts
+// All known raw18 domains (auto-derived) — used by run-recrawl-* scripts
 // to find manga whose from_manga18fx was stored under any of these domains.
-const urlPatterns = ['raw18.lol', 'raw18.men', 'raw18.cloud', 'raw18.win', 'raw18.info', 'raw18.link', 'raw18.rest', 'raw18.pics'];
+const urlPatterns = ALL_DOMAINS;
 
 module.exports = {
     name,
