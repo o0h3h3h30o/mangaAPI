@@ -1,5 +1,5 @@
 /**
- * Parser for raw18.cam (Japanese manga - フルカラー/Full-color)
+ * Parser for raw18.work (Japanese manga - フルカラー/Full-color)
  *
  * NOTE: Site thường xuyên đổi tên miền.
  *       Luôn dùng --source raw18 để chỉ định parser này.
@@ -27,11 +27,11 @@ const cheerio = require('cheerio');
 const { withProxy } = require('../proxy');
 const { USER_AGENT } = require('./base');
 
-const CURRENT_DOMAIN = 'raw18.cam';
+const CURRENT_DOMAIN = 'raw18.work';
 const BASE_URL = `https://${CURRENT_DOMAIN}`;
 
 // All legacy domains (add old domain here when CURRENT_DOMAIN changes)
-const LEGACY_DOMAINS = ['raw18.info', 'raw18.link', 'raw18.rest', 'raw18.win', 'raw18.cloud', 'raw18.men', 'raw18.lol', 'raw18.pics'];
+const LEGACY_DOMAINS = ['raw18.info', 'raw18.link', 'raw18.rest', 'raw18.win', 'raw18.cloud', 'raw18.men', 'raw18.lol', 'raw18.pics', 'raw18.cam'];
 
 // Current + legacy — single source of truth for all domain checks
 const ALL_DOMAINS = [CURRENT_DOMAIN, ...LEGACY_DOMAINS];
