@@ -8,23 +8,41 @@ const { slugify } = require('transliteration');
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 /**
- * Manually decompress a response body by Content-Encoding.
+ * Decode a response body that may be compressed (gzip / brotli / deflate).
  *
- * Why: when fetch goes through an undici ProxyAgent dispatcher, some Node
- * versions do NOT auto-decompress gzip/br/deflate responses, so res.text()
- * returns raw compressed bytes (garbage). We read the bytes ourselves and
- * decode based on the header. If the body is already plain (undici did
- * decompress, or no encoding), decompression throws and we fall back to the
- * raw buffer — so this is safe in every case.
+ * Why this is more than "read the header": when fetch goes through an undici
+ * ProxyAgent dispatcher, some Node versions (seen on v26) do NOT auto-decompress
+ * the body, AND the proxy can strip the Content-Encoding header entirely. So we
+ * may get raw brotli bytes with no header at all. Strategy:
+ *   1. If it already looks like text (<, {, [) → return as-is.
+ *   2. Otherwise try the declared codec first, then sniff every codec — proxies
+ *      lie/strip headers, so we just attempt each until one yields output.
+ *   3. Give up → return raw bytes as utf8.
  */
 function decodeBody(buf, encoding) {
+    if (!buf || buf.length === 0) return '';
+
+    // Already plain text (undici decompressed it, or server sent uncompressed)
+    const head = buf.subarray(0, 8).toString('latin1').replace(/^\s+/, '');
+    if (head.startsWith('<') || head.startsWith('{') || head.startsWith('[')) {
+        return buf.toString('utf8');
+    }
+
     const enc = (encoding || '').toLowerCase();
-    try {
-        if (enc.includes('br')) return zlib.brotliDecompressSync(buf).toString('utf8');
-        if (enc.includes('gzip')) return zlib.gunzipSync(buf).toString('utf8');
-        if (enc.includes('deflate')) return zlib.inflateSync(buf).toString('utf8');
-    } catch {
-        // Already-decompressed body (undici handled it) → fall through to raw
+    const codecs = [];
+    if (enc.includes('br')) codecs.push(zlib.brotliDecompressSync);
+    if (enc.includes('gzip')) codecs.push(zlib.gunzipSync);
+    if (enc.includes('deflate')) codecs.push(zlib.inflateSync);
+    // Fallbacks — covers a stripped or wrong Content-Encoding header
+    codecs.push(zlib.brotliDecompressSync, zlib.gunzipSync, zlib.inflateSync, zlib.inflateRawSync);
+
+    for (const fn of codecs) {
+        try {
+            const out = fn(buf);
+            if (out && out.length) return out.toString('utf8');
+        } catch {
+            // try next codec
+        }
     }
     return buf.toString('utf8');
 }
