@@ -181,11 +181,18 @@ async function getPageImages(chapterUrl) {
         return [...byPage.keys()].sort((a, b) => a - b).map(p => byPage.get(p));
     }
 
-    // Fallback: no Page-numbered alts → collect reader imgs by host, in DOM order
+    // Fallback: no Page-numbered alts → take every reader image inside the
+    // #all container, in DOM order. Host-agnostic on purpose: chapter images
+    // live on various CDNs (storage.submanhwa.net, submanhwa.com/uploads,
+    // media.ikigaimangas.cloud, ...), so we must not filter by hostname.
     const images = [];
-    $('img.scan-page, img.lazy-smart, .viewer-cnt img').each((_, el) => {
+    const seen = new Set();
+    $('#all img').each((_, el) => {
+        const alt = $(el).attr('alt') || '';
+        if (/cr[eé]dito/i.test(alt)) return; // skip the "Créditos" promo image
         const src = $(el).attr('data-src') || $(el).attr('src') || '';
-        if (src.startsWith('http') && /storage\.submanhwa\.net|submanhwa\.com\/uploads/.test(src)) {
+        if (src.startsWith('http') && !seen.has(src)) {
+            seen.add(src);
             images.push(src);
         }
     });
