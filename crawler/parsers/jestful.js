@@ -118,10 +118,21 @@ function extractJapanesePart(text) {
 function extractMangaInfo(html) {
     const $ = cheerio.load(html);
 
-    // Title from h3 (usually romaji/english). jestful appends " - RAW" to every
-    // title on the detail page (e.g. "UNNAMED MEMORY (MANGA) - RAW") — strip it
-    // so the fallback name is the clean series title.
-    const h3Title = $('ul.manga-info h3').first().text().trim().replace(/\s*-\s*RAW\s*$/i, '').trim();
+    // Title. Primary: <h3> under ul.manga-info. Fallback: <title> tag when the
+    // detail page renders without the info block (seen on some environments).
+    // jestful appends noise to titles ("- RAW", " Online Free - JF"), strip all
+    // known suffixes so the fallback name is the clean series title.
+    const cleanJestfulTitle = (t) => (t || '')
+        .replace(/\s*-\s*JF\s*$/i, '')
+        .replace(/\s+Online\s+Free\s*$/i, '')
+        .replace(/\s*-\s*RAW\s*$/i, '')
+        .trim();
+
+    let h3Title = cleanJestfulTitle($('ul.manga-info h3').first().text().trim());
+    if (!h3Title) {
+        // <title> is mixed-case, uppercase it so it matches the site's h3 style
+        h3Title = cleanJestfulTitle($('title').first().text().trim()).toUpperCase();
+    }
 
     // Cover image (may be relative, build full URL)
     const rawCoverUrl = $('.info-cover img.thumbnail').attr('src') || '';
