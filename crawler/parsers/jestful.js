@@ -118,8 +118,10 @@ function extractJapanesePart(text) {
 function extractMangaInfo(html) {
     const $ = cheerio.load(html);
 
-    // Title from h3 (usually romaji/english)
-    const h3Title = $('ul.manga-info h3').first().text().trim();
+    // Title from h3 (usually romaji/english). jestful appends " - RAW" to every
+    // title on the detail page (e.g. "UNNAMED MEMORY (MANGA) - RAW") — strip it
+    // so the fallback name is the clean series title.
+    const h3Title = $('ul.manga-info h3').first().text().trim().replace(/\s*-\s*RAW\s*$/i, '').trim();
 
     // Cover image (may be relative, build full URL)
     const rawCoverUrl = $('.info-cover img.thumbnail').attr('src') || '';
