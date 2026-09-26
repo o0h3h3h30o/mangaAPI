@@ -41,6 +41,18 @@ function extractUrls(fromManga18fx) {
         .filter(s => /^https?:\/\//i.test(s));
 }
 
+// Defensive blacklist — refuse to write these obviously-not-a-name strings even
+// when a parser hands them back. Covers soft-404s and other error-page titles.
+const BAD_NAME = /^(sorry.*(page\s+)?not\s+found|page\s+not\s+found|not\s+found|error\s*404|access\s+denied|404\s*not\s*found|forbidden)$/i;
+
+function isPlausibleName(name) {
+    if (!name) return false;
+    const trimmed = name.trim();
+    if (trimmed.length < 2) return false;
+    if (BAD_NAME.test(trimmed)) return false;
+    return true;
+}
+
 async function resolveName(manga) {
     const urls = extractUrls(manga.from_manga18fx);
     if (urls.length === 0) return { name: null, error: 'no-source-url' };
@@ -54,7 +66,7 @@ async function resolveName(manga) {
         try {
             const html = await base.fetchPage(url);
             const info = parser.extractMangaInfo(html);
-            if (info && info.name && info.name.trim()) {
+            if (info && isPlausibleName(info.name)) {
                 return { name: info.name.trim(), source: parser.name, url };
             }
         } catch (e) {

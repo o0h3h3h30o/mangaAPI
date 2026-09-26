@@ -118,20 +118,29 @@ function extractJapanesePart(text) {
 function extractMangaInfo(html) {
     const $ = cheerio.load(html);
 
+    // Soft-404 / error pages: jestful returns 200 with a "Sorry! Page Not Found"
+    // <title>. Bail out with a blank name so callers won't overwrite good data
+    // with the error-page string.
+    const pageTitle = $('title').first().text().trim();
+    if (/sorry.*(page\s+)?not\s+found|not\s+found|error\s*404|access\s+denied/i.test(pageTitle)
+        && $('ul.manga-info').length === 0) {
+        return { name: '', slugName: '', coverUrl: '', otherNames: '', genres: [], status: 'ongoing', authors: [], description: '' };
+    }
+
     // Title. Primary: <h3> under ul.manga-info. Fallback: <title> tag when the
     // detail page renders without the info block (seen on some environments).
-    // jestful appends noise to titles ("- RAW", " Online Free - JF"), strip all
-    // known suffixes so the fallback name is the clean series title.
+    // jestful appends noise to titles ("- RAW", " RAW", " Online Free - JF"),
+    // strip all known suffixes so the fallback name is the clean series title.
     const cleanJestfulTitle = (t) => (t || '')
         .replace(/\s*-\s*JF\s*$/i, '')
         .replace(/\s+Online\s+Free\s*$/i, '')
-        .replace(/\s*-\s*RAW\s*$/i, '')
+        .replace(/\s+(?:-\s*)?RAW\s*$/i, '')    // covers " - RAW" AND " RAW"
         .trim();
 
     let h3Title = cleanJestfulTitle($('ul.manga-info h3').first().text().trim());
     if (!h3Title) {
         // <title> is mixed-case, uppercase it so it matches the site's h3 style
-        h3Title = cleanJestfulTitle($('title').first().text().trim()).toUpperCase();
+        h3Title = cleanJestfulTitle(pageTitle).toUpperCase();
     }
 
     // Cover image (may be relative, build full URL)
