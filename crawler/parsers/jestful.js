@@ -27,6 +27,18 @@ function match(url) {
     return url.includes('jestful.net');
 }
 
+/**
+ * Strip the site-specific noise jestful appends to series titles everywhere
+ * (" - Raw", " RAW", " - JF", " Online Free"). Applied to h1 and img[alt].
+ */
+function stripJestfulSuffixes(t) {
+    return (t || '')
+        .replace(/\s*-\s*JF\s*$/i, '')
+        .replace(/\s+Online\s+Free\s*$/i, '')
+        .replace(/\s+(?:-\s*)?RAW\s*$/i, '')
+        .trim();
+}
+
 function getHomepageUrls(pages) {
     const count = pages || DEFAULT_PAGES;
     const urls = [];
@@ -52,7 +64,7 @@ function parseHomepage(html) {
 
         const $img = $coverLink.find('img').first();
         // img[alt] holds the proper series name; fall back to <h2>
-        const mangaName = ($img.attr('alt') || $card.find('h2').first().text() || '').trim();
+        const mangaName = stripJestfulSuffixes(($img.attr('alt') || $card.find('h2').first().text() || '').trim());
         if (!mangaName) return;
 
         const coverUrl = resolveCoverUrl($img.attr('src') || '');
@@ -115,7 +127,7 @@ function extractMangaInfo(html) {
     }
 
     // Primary title from <h1>
-    const h1Title = $('h1.manga-detail-title').first().text().trim();
+    const h1Title = stripJestfulSuffixes($('h1.manga-detail-title').first().text().trim());
 
     // Alternative names: <div class="manga-detail-alt"><b>Alternative:</b> ...</div>
     const altText = $('.manga-detail-alt').clone().find('b').remove().end().text().trim();
