@@ -1,10 +1,19 @@
 /**
- * Parser for jestful.net
- * Extracts manga and chapter data from homepage and detail pages
+ * Parser for jestful.net (2026 "modern" layout)
+ *
+ * The site switched from a classic Bootstrap theme to a new grid layout and
+ * killed the old backend endpoints (/app/manga/controllers/*.lstc returns 404,
+ * no more #chapter hidden input). Everything is now parsed from HTML directly.
+ *
+ * Homepage/list: /manga-list.html?page=N&sort=last_update&sort_type=DESC
+ *   → article.manga-update-card × 24, chapters via a.update-chapter-link
+ * Detail:         /hwms-{slug}.html
+ *   → h1.manga-detail-title, .manga-detail-alt, .meta-row, a[href*=genre]
+ *   → chapter list in .chapters-grid-container > a.chapter-card-item
+ * Chapter reader: /bsaq-{slug}-chapter-N.html
+ *   → img.reader-img[src]
  */
 const cheerio = require('cheerio');
-const { parseChapterNumber } = require('./base');
-const { withProxy } = require('../proxy');
 
 const BASE_URL = 'https://jestful.net';
 
@@ -18,15 +27,11 @@ function match(url) {
     return url.includes('jestful.net');
 }
 
-/**
- * Get homepage URLs to crawl (paginated)
- * @param {number} [pages] - override number of pages (default: 3)
- */
 function getHomepageUrls(pages) {
     const count = pages || DEFAULT_PAGES;
     const urls = [];
     for (let page = 1; page <= count; page++) {
-        urls.push(`${BASE_URL}/manga-list.html?listType=pagination&page=${page}&sort=last_update&sort_type=DESC`);
+        urls.push(`${BASE_URL}/manga-list.html?page=${page}&sort=last_update&sort_type=DESC`);
     }
     return urls;
 }
@@ -38,40 +43,36 @@ function parseHomepage(html) {
     const $ = cheerio.load(html);
     const results = [];
 
-    $('.thumb-item-flow').each((_, el) => {
-        const $item = $(el);
+    $('article.manga-update-card').each((_, el) => {
+        const $card = $(el);
 
-        const name = $item.find('h3.title-thumb').text().trim();
-        if (!name) return;
+        const $coverLink = $card.find('a.update-cover-link').first();
+        const relUrl = $coverLink.attr('href') || '';
+        if (!relUrl) return;
 
-        // Manga URL from series-title link (href starts with "hwms-")
-        const relativeUrl = $item.find('.series-title a').attr('href') || '';
-        const url = buildFullUrl(relativeUrl);
+        const $img = $coverLink.find('img').first();
+        // img[alt] holds the proper series name; fall back to <h2>
+        const mangaName = ($img.attr('alt') || $card.find('h2').first().text() || '').trim();
+        if (!mangaName) return;
 
-        // Cover from data-bg attribute on .img-in-ratio
-        const coverUrl = $item.find('.img-in-ratio').attr('data-bg') || '';
+        const coverUrl = resolveCoverUrl($img.attr('src') || '');
 
-        // Chapter from "Last chapter: X" button
+        // Latest chapters: text "◈ Ch. 108", href "/bsaq-{slug}-chapter-N.html".
+        // Parse the number from the href — robust against stray dots in the
+        // text (e.g. the dot in "Ch.") and any future label changes.
         const chapters = [];
-        $item.find('a.btn-danger').each((_, chEl) => {
-            const $ch = $(chEl);
-            const chapterRelUrl = $ch.attr('href') || '';
-            const chText = $ch.text().trim(); // "Last chapter: 4.1"
-            // Extract number from "Last chapter: X" format
-            const match = chText.match(/([\d.]+)\s*$/);
-            const number = match ? parseFloat(match[1]) : null;
-
-            if (number !== null) {
-                chapters.push({
-                    number,
-                    url: buildFullUrl(chapterRelUrl),
-                });
+        $card.find('a.update-chapter-link').each((_, chEl) => {
+            const href = $(chEl).attr('href') || '';
+            const m = href.match(/-chapter-(\d+(?:\.\d+)?)\.html/i);
+            const number = m ? parseFloat(m[1]) : null;
+            if (number !== null && isFinite(number)) {
+                chapters.push({ number, url: buildFullUrl(href) });
             }
         });
 
         results.push({
-            name,
-            url,
+            name: mangaName,
+            url: buildFullUrl(relUrl),
             coverUrl,
             chapters,
             latestChapterNum: chapters.length > 0 ? chapters[0].number : 0,
@@ -82,157 +83,181 @@ function parseHomepage(html) {
 }
 
 /**
- * Strict Japanese check: MUST contain hiragana or katakana.
- * These two syllabaries exist only in Japanese, so they distinguish
- * JP from Chinese (which shares the CJK kanji range \u4e00-\u9faf).
+ * Strict Japanese check: MUST contain hiragana or katakana (JP-only scripts).
  */
 function isJapanese(text) {
-    return /[\u3040-\u309f\u30a0-\u30ff]/.test(text);
+    return /[぀-ゟ゠-ヿ]/.test(text);
 }
 
-/**
- * Weak fallback: contains any CJK ideograph (kanji) — could be Japanese
- * or Chinese. Use only when no hiragana/katakana candidate exists.
- */
 function hasCjkIdeograph(text) {
-    return /[\u4e00-\u9faf\u3400-\u4dbf]/.test(text);
+    return /[一-龯㐀-䶿]/.test(text);
 }
 
-/**
- * Extract the Japanese portion from a mixed string
- * "Shanbaraddo シャンバラッド" → "シャンバラッド"
- * "公式不倫" → "公式不倫"
- */
 function extractJapanesePart(text) {
-    // Match consecutive Japanese characters (+ spaces between them)
-    const matches = text.match(/[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\u4e00-\u9faf\u3400-\u4dbf\s]+/g);
+    const matches = text.match(/[　-〿぀-ゟ゠-ヿ一-龯㐀-䶿\s]+/g);
     if (!matches) return text;
-    // Return the longest Japanese segment, trimmed
     return matches.reduce((a, b) => a.length >= b.length ? a : b).trim();
 }
 
 /**
- * Parse manga detail page → extract manga info
- * name = Japanese name (from otherNames), otherNames = all names combined
+ * Parse detail page → manga info.
+ * name = Japanese alt name when present (hiragana/katakana > kanji-only),
+ *        otherwise the h1 series title.
  */
 function extractMangaInfo(html) {
     const $ = cheerio.load(html);
 
-    // Soft-404 / error pages: jestful returns 200 with a "Sorry! Page Not Found"
-    // <title>. Bail out with a blank name so callers won't overwrite good data
-    // with the error-page string.
+    // Soft-404: jestful serves a themed error page with HTTP 200.
     const pageTitle = $('title').first().text().trim();
-    if (/sorry.*(page\s+)?not\s+found|not\s+found|error\s*404|access\s+denied/i.test(pageTitle)
-        && $('ul.manga-info').length === 0) {
+    if (/sorry.*(page\s+)?not\s+found|page\s+not\s+found|not\s+found|error\s*404/i.test(pageTitle)
+        && $('h1.manga-detail-title').length === 0) {
         return { name: '', slugName: '', coverUrl: '', otherNames: '', genres: [], status: 'ongoing', authors: [], description: '' };
     }
 
-    // Title. Primary: <h3> under ul.manga-info. Fallback: <title> tag when the
-    // detail page renders without the info block (seen on some environments).
-    // jestful appends noise to titles ("- RAW", " RAW", " Online Free - JF"),
-    // strip all known suffixes so the fallback name is the clean series title.
-    const cleanJestfulTitle = (t) => (t || '')
-        .replace(/\s*-\s*JF\s*$/i, '')
-        .replace(/\s+Online\s+Free\s*$/i, '')
-        .replace(/\s+(?:-\s*)?RAW\s*$/i, '')    // covers " - RAW" AND " RAW"
-        .trim();
+    // Primary title from <h1>
+    const h1Title = $('h1.manga-detail-title').first().text().trim();
 
-    let h3Title = cleanJestfulTitle($('ul.manga-info h3').first().text().trim());
-    if (!h3Title) {
-        // <title> is mixed-case, uppercase it so it matches the site's h3 style
-        h3Title = cleanJestfulTitle(pageTitle).toUpperCase();
-    }
-
-    // Cover image (may be relative, build full URL)
-    const rawCoverUrl = $('.info-cover img.thumbnail').attr('src') || '';
-    const coverUrl = buildFullUrl(rawCoverUrl);
-
-    // Raw other names from page
-    let rawOtherNames = '';
-    $('ul.manga-info li').each((_, el) => {
-        const text = $(el).text();
-        if (text.includes('Other name')) {
-            rawOtherNames = text.replace(/.*Other name\s*\(s\)\s*:\s*/i, '').trim();
-        }
-    });
-
-    // Split other names and find Japanese name.
-    // Priority:
-    //   1. Entry with hiragana/katakana → definitely Japanese
-    //   2. Entry with only CJK ideographs (kanji-only) → could be JP or CN,
-    //      used as weak fallback only if no stronger candidate exists
-    const altNames = rawOtherNames
-        ? rawOtherNames.split(/,\s*/).map(n => n.trim()).filter(Boolean)
+    // Alternative names: <div class="manga-detail-alt"><b>Alternative:</b> ...</div>
+    const altText = $('.manga-detail-alt').clone().find('b').remove().end().text().trim();
+    const altNames = altText
+        ? altText.split(/[,，/、]/).map(s => s.trim()).filter(Boolean)
         : [];
-    const jpName = altNames.find(isJapanese)
-                || altNames.find(hasCjkIdeograph);
 
-    // name = Japanese portion extracted from JP entry, fallback to h3 title
-    const mangaName = jpName ? extractJapanesePart(jpName) : h3Title;
+    // Pick JP name: hiragana/katakana first, kanji-only as weak fallback
+    const jpName = altNames.find(isJapanese) || altNames.find(hasCjkIdeograph);
+    const mangaName = jpName ? extractJapanesePart(jpName) : h1Title;
 
-    // otherNames = all unique names combined (JP names, EN names, h3 title)
+    // otherNames = all alt entries + h1 (dedup, keep order)
     const allNames = [...altNames];
-    if (h3Title && !allNames.some(n => n.toLowerCase() === h3Title.toLowerCase())) {
-        allNames.push(h3Title);
+    if (h1Title && !allNames.some(n => n.toLowerCase() === h1Title.toLowerCase())) {
+        allNames.push(h1Title);
     }
     const otherNames = allNames.join(', ');
 
-    // Genres
-    const genres = [];
-    $('ul.manga-info li').each((_, el) => {
-        const text = $(el).text();
-        if (text.includes('Genre(s)')) {
-            $(el).find('a.btn').each((_, a) => {
-                const genre = $(a).text().trim();
-                if (genre) genres.push(genre);
-            });
-        }
+    // Cover: first img on the page that is NOT a related-manga thumbnail
+    let coverUrl = '';
+    $('img').each((_, el) => {
+        const cls = $(el).attr('class') || '';
+        if (cls.includes('related-cover-img')) return;
+        const src = $(el).attr('src') || $(el).attr('data-src') || '';
+        if (!src || src.startsWith('data:')) return;
+        coverUrl = resolveCoverUrl(src);
+        return false; // break
     });
 
-    // Status: "Incomplete" → "ongoing", "Completed" → "completed"
-    let status = 'ongoing';
-    $('ul.manga-info li').each((_, el) => {
-        const text = $(el).text();
-        if (text.includes('Status')) {
-            const statusText = $(el).find('a.btn').text().trim().toLowerCase();
-            if (statusText.includes('complete') && !statusText.includes('incomplete')) {
-                status = 'completed';
-            }
-        }
+    // Metadata from .meta-row: <b>Label:</b> value
+    const meta = {};
+    $('.meta-row').each((_, el) => {
+        const label = $(el).find('b').first().text().trim().replace(/:$/, '').toLowerCase();
+        const value = $(el).clone().find('b').remove().end().text().replace(/\s+/g, ' ').trim();
+        if (label && value) meta[label] = value;
     });
 
-    // Authors (often commented out in HTML, try regex on raw HTML)
-    const authors = [];
-    const authorMatch = html.match(/manga-author-(.*?)\.html/g);
-    if (authorMatch) {
-        authorMatch.forEach(m => {
-            const authorName = m.replace('manga-author-', '').replace('.html', '');
-            if (authorName && !authors.includes(authorName)) authors.push(authorName);
-        });
+    const authors = (meta.author || '').split(/[,/、]/).map(s => s.trim()).filter(Boolean);
+    const artists = (meta.artist || '').split(/[,/、]/).map(s => s.trim()).filter(Boolean);
+
+    // Status: "Ongoing" → "ongoing", "Completed" → "completed"
+    const statusText = (meta.status || '').toLowerCase();
+    const status = (statusText.includes('complete') && !statusText.includes('incomplete')) ? 'completed' : 'ongoing';
+
+    // Genres: a[href*="genre="] or a[href*="genre-"] (dedupe)
+    const genreSet = new Set();
+    $('a[href*="genre"]').each((_, el) => {
+        const t = $(el).text().trim();
+        const href = $(el).attr('href') || '';
+        if (t && /genre/i.test(href) && t.length < 40 && !/theme/i.test(href)) genreSet.add(t);
+    });
+    const genres = [...genreSet];
+
+    // Description (defensive — not always present)
+    let description = '';
+    const $desc = $('[class*="summary"], [class*="description"], [class*="story"]').first();
+    if ($desc.length) {
+        const t = $desc.text().trim();
+        if (t.length > 20 && t.length < 5000) description = t;
     }
 
-    // Description
-    let description = '';
-    $('div.row').each((_, el) => {
-        const $row = $(el);
-        const h3 = $row.find('h3').first().text().trim();
-        if (h3 === 'Description') {
-            description = $row.find('p').first().text().trim();
-        }
-    });
-
-    return { name: mangaName, slugName: h3Title, coverUrl, otherNames, genres, status, authors, description };
+    return {
+        name: mangaName,
+        slugName: h1Title,
+        coverUrl,
+        otherNames,
+        genres,
+        status,
+        authors,
+        artists,
+        description,
+    };
 }
 
 /**
- * Get full chapter list for a manga by its source URL
+ * Get full chapter list by parsing the detail page directly.
+ * Each chapter is <a class="chapter-card-item ..."> in .chapters-grid-container.
+ * Chapter number is extracted from the href (/bsaq-{slug}-chapter-N.html).
  */
 async function getFullChapterList(mangaSourceUrl) {
-    const slug = extractSlugFromUrl(mangaSourceUrl);
-    if (!slug) throw new Error(`Cannot extract slug from: ${mangaSourceUrl}`);
+    const { fetchPage } = require('./base');
+    const html = await fetchPage(mangaSourceUrl);
+    const $ = cheerio.load(html);
 
-    const html = await fetchChapterList(slug);
-    return parseChapterListResponse(html);
+    const seen = new Set();
+    const chapters = [];
+
+    $('.chapters-grid-container a.chapter-card-item, a[href*="-chapter-"]').each((_, el) => {
+        const $a = $(el);
+        const href = $a.attr('href') || '';
+        if (!/-chapter-[\d.]+\.html$/i.test(href)) return;
+        // Skip the two buttons at top of detail page ("Read First Chapter" etc.)
+        const cls = $a.attr('class') || '';
+        if (/btn-primary-glow|btn-secondary-glow/.test(cls) && !/chapter-card-item|chapter-row/.test(cls)) return;
+
+        const url = buildFullUrl(href);
+        if (seen.has(url)) return;
+        seen.add(url);
+
+        const m = href.match(/-chapter-([\d.]+)\.html$/i);
+        const number = m ? parseFloat(m[1]) : null;
+        if (number === null || !isFinite(number)) return;
+
+        // Try to find a sibling time element for created_at
+        const timeText = $a.find('time, [class*="time"]').first().text().trim()
+            || $a.parent().find('time, [class*="time"]').first().text().trim();
+        const dt = parseRelativeTime(timeText);
+        const createdAt = dt ? formatMysqlDatetime(dt) : null;
+
+        chapters.push({ number, url, created_at: createdAt });
+    });
+
+    // De-dupe by number, keep the newer (first encountered in DOM is newest)
+    const byNumber = new Map();
+    for (const ch of chapters) if (!byNumber.has(ch.number)) byNumber.set(ch.number, ch);
+    // Return oldest-first so the crawler's numbering is stable
+    return [...byNumber.values()].sort((a, b) => a.number - b.number);
+}
+
+/**
+ * Get page images for a chapter — parse <img class="reader-img"> directly.
+ */
+async function getPageImages(chapterUrl) {
+    const { fetchPage } = require('./base');
+    const html = await fetchPage(chapterUrl);
+    const $ = cheerio.load(html);
+
+    const images = [];
+    $('img.reader-img').each((_, el) => {
+        const src = $(el).attr('src') || $(el).attr('data-src') || '';
+        if (src && src.startsWith('http')) images.push(src);
+    });
+
+    // Fallback: any <img> inside a reader container, if the class changes again
+    if (images.length === 0) {
+        $('.reader-content img, #reader img, [class*="reader"] img').each((_, el) => {
+            const src = $(el).attr('src') || $(el).attr('data-src') || '';
+            if (src && src.startsWith('http')) images.push(src);
+        });
+    }
+
+    return images;
 }
 
 // --------------- Internal Helpers ---------------
@@ -243,148 +268,55 @@ function buildFullUrl(relativePath) {
     return `${BASE_URL}/${relativePath.replace(/^\//, '')}`;
 }
 
-function extractSlugFromUrl(url) {
-    const match = url.match(/hwms-(.*?)\.html/);
-    return match ? match[1] : null;
-}
-
-function generateRandomString(length) {
-    const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let result = '';
-    for (let i = 0; i < length; i++) {
-        result += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return result;
-}
-
-async function fetchChapterList(mangaSlug) {
-    const randomStr = generateRandomString(25);
-    const url = `${BASE_URL}/app/manga/controllers/${randomStr}.lstc?slug=${mangaSlug}`;
-
-    const res = await fetch(url, withProxy({
-        headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-            'Referer': 'http://jestful.net',
-        },
-    }));
-
-    if (!res.ok) throw new Error(`HTTP ${res.status} fetching chapter list for ${mangaSlug}`);
-    return res.text();
+/**
+ * Cover URLs come as "/app/manga/themes/modern/cover.php?u=<base64>&w=..."
+ * where <base64> is the real CDN URL. Decode it so we save a direct URL
+ * rather than one that depends on the jestful proxy staying up.
+ */
+function resolveCoverUrl(src) {
+    if (!src) return '';
+    const absolute = buildFullUrl(src);
+    const m = absolute.match(/[?&]u=([A-Za-z0-9+/=_-]+)/);
+    if (!m) return absolute;
+    try {
+        const decoded = Buffer.from(m[1], 'base64').toString('utf8');
+        if (/^https?:\/\//i.test(decoded)) return decoded;
+    } catch { /* fall through */ }
+    return absolute;
 }
 
 /**
- * Parse relative time strings từ jestful: "14 minutes ago", "2 weeks ago", "1 months ago"...
- * → Date object. Returns null nếu không parse được.
+ * Parse relative time ("14 minutes ago", "2 weeks ago", ...) → Date or null.
  */
 function parseRelativeTime(text) {
     if (!text) return null;
     const str = text.toLowerCase().trim();
 
-    // "just now" / "a few seconds ago"
-    if (/^(just now|a few seconds? ago)$/.test(str)) {
-        return new Date();
-    }
+    if (/^(just now|a few seconds? ago)$/.test(str)) return new Date();
 
-    // "a minute ago" / "an hour ago" / "a day ago"...
     const aMatch = str.match(/^(?:a|an)\s+(second|minute|hour|day|week|month|year)s?\s+ago$/);
-    // "14 minutes ago" / "2 weeks ago" / "1 months ago"
     const nMatch = str.match(/^(\d+)\s*(second|minute|hour|day|week|month|year)s?\s+ago$/);
-
     const m = nMatch || aMatch;
     if (!m) return null;
 
     const n = nMatch ? parseInt(nMatch[1], 10) : 1;
-    const unit = (nMatch ? nMatch[2] : aMatch[1]);
-
+    const unit = nMatch ? nMatch[2] : aMatch[1];
     const msPerUnit = {
         second: 1000,
         minute: 60 * 1000,
         hour: 60 * 60 * 1000,
         day: 24 * 60 * 60 * 1000,
         week: 7 * 24 * 60 * 60 * 1000,
-        month: 30 * 24 * 60 * 60 * 1000,   // xấp xỉ
-        year: 365 * 24 * 60 * 60 * 1000,   // xấp xỉ
+        month: 30 * 24 * 60 * 60 * 1000,
+        year: 365 * 24 * 60 * 60 * 1000,
     }[unit];
-
     return new Date(Date.now() - n * msPerUnit);
 }
 
-/**
- * Format Date → "YYYY-MM-DD HH:MM:SS" (MySQL DATETIME, local timezone)
- */
 function formatMysqlDatetime(date) {
     const pad = (n) => String(n).padStart(2, '0');
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
            `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
-}
-
-function parseChapterListResponse(html) {
-    const $ = cheerio.load(html);
-    const chapters = [];
-
-    $('tbody tr').each((_, el) => {
-        const $row = $(el);
-        const $a = $row.find('a').first();
-        if (!$a.length) return;
-
-        const href = $a.attr('href') || '';
-        const chName = $a.text().trim();
-        const number = parseChapterNumber(chName);
-        const timeText = $row.find('time').text().trim();
-
-        // Convert relative time ("2 weeks ago") → MySQL DATETIME
-        const dt = parseRelativeTime(timeText);
-        const createdAt = dt ? formatMysqlDatetime(dt) : null;
-
-        if (number !== null) {
-            chapters.push({
-                number,
-                url: buildFullUrl(href),
-                created_at: createdAt,
-            });
-        }
-    });
-
-    return chapters;
-}
-
-/**
- * Get page images for a chapter
- * 1. Fetch chapter page → extract chapter_id from #chapter input
- * 2. Call image API: /app/manga/controllers/{random30}iog?cid={chapter_id}
- * 3. Parse response: p img → image URLs
- */
-async function getPageImages(chapterUrl) {
-    const { fetchPage } = require('./base');
-
-    // Step 1: Fetch chapter page, extract chapter_id
-    const html = await fetchPage(chapterUrl);
-    const $ = cheerio.load(html);
-    const chapterId = $('#chapter').attr('value') || $('#chapter').val();
-    if (!chapterId) throw new Error(`Cannot find #chapter value from: ${chapterUrl}`);
-
-    // Step 2: Call image API
-    const randomStr = generateRandomString(30);
-    const apiUrl = `${BASE_URL}/app/manga/controllers/${randomStr}iog?cid=${chapterId}`;
-
-    const res = await fetch(apiUrl, withProxy({
-        headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-            'Referer': 'https://jestful.net',
-        },
-    }));
-    if (!res.ok) throw new Error(`HTTP ${res.status} fetching page images for cid=${chapterId}`);
-    const imgHtml = await res.text();
-
-    // Step 3: Parse p img → image URLs
-    const $img = cheerio.load(imgHtml);
-    const images = [];
-    $img('p img').each((_, el) => {
-        const src = $img(el).attr('src') || $img(el).attr('data-src') || '';
-        if (src) images.push(src);
-    });
-
-    return images;
 }
 
 // --------------- Export ---------------
